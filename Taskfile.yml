@@ -1,0 +1,27 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t penguins-api:latest .
+
+  up:
+    desc: Start API with docker-compose
+    cmds:
+      - docker compose up -d --build
+
+  down:
+    desc: Stop API
+    cmds:
+      - docker compose down
+
+  logs:
+    desc: Tail API logs
+    cmds:
+      - docker compose logs -f app
+
+  shell:
+    desc: Shell into running container
+    cmds:
+      - docker exec -it penguins-api /bin/bash
