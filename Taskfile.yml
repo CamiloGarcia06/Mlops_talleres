@@ -21,6 +21,11 @@ tasks:
     cmds:
       - docker compose logs -f app
 
+  jupyter:
+    desc: Start Jupyter Lab with docker-compose
+    cmds:
+      - docker compose up -d --build jupyter
+
   shell:
     desc: Shell into running container
     cmds:

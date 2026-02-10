@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Penguin Species Predictor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.3rem;
+      color: #1a365d;
+    }
+    .subtitle {
+      color: #718096;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      padding: 2rem;
+      width: 100%;
+      max-width: 480px;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+      font-size: 0.9rem;
+      color: #4a5568;
+    }
+    input, select {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border: 1px solid #cbd5e0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4299e1;
+      box-shadow: 0 0 0 3px rgba(66,153,225,0.15);
+    }
+    .row {
+      display: flex;
+      gap: 1rem;
+    }
+    .row .form-group { flex: 1; }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: #2b6cb0;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 0.5rem;
+    }
+    button:hover { background: #2c5282; }
+    button:disabled {
+      background: #a0aec0;
+      cursor: not-allowed;
+    }
+
+    /* Result */
+    .result {
+      margin-top: 1.5rem;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result-header {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .species-name {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #2b6cb0;
+    }
+    .prob-bar-container {
+      margin-bottom: 0.6rem;
+    }
+    .prob-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 0.2rem;
+      font-weight: 500;
+    }
+    .prob-bar {
+      height: 22px;
+      background: #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .prob-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width 0.5s ease;
+    }
+    .prob-fill.adelie   { background: #e53e3e; }
+    .prob-fill.chinstrap { background: #38a169; }
+    .prob-fill.gentoo    { background: #3182ce; }
+
+    .error-msg {
+      margin-top: 1rem;
+      padding: 0.8rem;
+      background: #fff5f5;
+      color: #c53030;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Penguin Species Predictor</h1>
+  <p class="subtitle">Ingresa las medidas del pinguino para predecir su especie</p>
+
+  <div class="card">
+    <form id="predict-form">
+      <div class="row">
+        <div class="form-group">
+          <label for="bill_length_mm">Largo del pico (mm)</label>
+          <input type="number" id="bill_length_mm" step="0.1" min="0.1" value="39.1" required>
+        </div>
+        <div class="form-group">
+          <label for="bill_depth_mm">Profundidad del pico (mm)</label>
+          <input type="number" id="bill_depth_mm" step="0.1" min="0.1" value="18.7" required>
+        </div>
+      </div>
+      <div class="row">
+        <div class="form-group">
+          <label for="flipper_length_mm">Largo de aleta (mm)</label>
+          <input type="number" id="flipper_length_mm" step="0.1" min="0.1" value="181.0" required>
+        </div>
+        <div class="form-group">
+          <label for="body_mass_g">Masa corporal (g)</label>
+          <input type="number" id="body_mass_g" step="1" min="1" value="3750" required>
+        </div>
+      </div>
+      <div class="row">
+        <div class="form-group">
+          <label for="island">Isla</label>
+          <select id="island" required>
+            <option value="torgersen">Torgersen</option>
+            <option value="biscoe">Biscoe</option>
+            <option value="dream">Dream</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sex">Sexo</label>
+          <select id="sex" required>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" id="submit-btn">Predecir especie</button>
+    </form>
+
+    <div class="result" id="result">
+      <div class="result-header">
+        <div>Especie predicha:</div>
+        <div class="species-name" id="species-name"></div>
+      </div>
+      <div id="prob-bars"></div>
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('predict-form');
+    const resultDiv = document.getElementById('result');
+    const errorDiv = document.getElementById('error-msg');
+    const speciesNameEl = document.getElementById('species-name');
+    const probBarsEl = document.getElementById('prob-bars');
+    const submitBtn = document.getElementById('submit-btn');
+
+    const COLORS = {
+      'Adelie': 'adelie',
+      'Chinstrap': 'chinstrap',
+      'Gentoo': 'gentoo',
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      resultDiv.classList.remove('show');
+      errorDiv.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Prediciendo...';
+
+      const payload = {
+        bill_length_mm: parseFloat(document.getElementById('bill_length_mm').value),
+        bill_depth_mm: parseFloat(document.getElementById('bill_depth_mm').value),
+        flipper_length_mm: parseFloat(document.getElementById('flipper_length_mm').value),
+        body_mass_g: parseFloat(document.getElementById('body_mass_g').value),
+        island: document.getElementById('island').value,
+        sex: document.getElementById('sex').value,
+      };
+
+      try {
+        const res = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const detail = await res.json();
+          throw new Error(detail.detail || `Error ${res.status}`);
+        }
+
+        const data = await res.json();
+        speciesNameEl.textContent = data.species;
+
+        probBarsEl.innerHTML = '';
+        for (const [name, prob] of Object.entries(data.probabilities)) {
+          const pct = (prob * 100).toFixed(1);
+          const colorClass = COLORS[name] || 'adelie';
+          probBarsEl.innerHTML += `
+            <div class="prob-bar-container">
+              <div class="prob-label"><span>${name}</span><span>${pct}%</span></div>
+              <div class="prob-bar">
+                <div class="prob-fill ${colorClass}" style="width: ${pct}%"></div>
+              </div>
+            </div>`;
+        }
+        resultDiv.classList.add('show');
+      } catch (err) {
+        errorDiv.textContent = err.message;
+        errorDiv.classList.add('show');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Predecir especie';
+      }
+    });
+  </script>
+</body>
+</html>

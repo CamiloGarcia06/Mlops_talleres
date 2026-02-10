@@ -7,3 +7,17 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+  jupyter:
+    build: .
+    container_name: penguins-jupyter
+    command: >
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+      --IdentityProvider.token='' --ServerApp.password=''
+      --ServerApp.disable_check_xsrf=True
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

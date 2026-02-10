@@ -26,6 +26,9 @@ Detiene y elimina los contenedores levantados por `docker compose`.
 1. `task logs`
 Muestra y sigue los logs del servicio `api`.
 
+1. `task jupyter`
+Levanta Jupyter Lab en `http://localhost:8888` (sin autenticación).
+
 1. `task shell`
 Abre una shell dentro del contenedor en ejecución `penguins-api`.
 
@@ -42,6 +45,7 @@ task up
 ```
 
 Luego el API estará disponible en `http://localhost:8989`.
+Jupyter Lab quedará disponible en `http://localhost:8888` si ejecutas `task jupyter` o `task up`.
 
 ## Convenciones de commits
 
