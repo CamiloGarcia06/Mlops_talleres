@@ -7,21 +7,28 @@ tasks:
       - docker build -t penguins-api:latest .
 
   up:
-    desc: Start API with docker-compose
+    desc: Build and start API container
     cmds:
-      - docker compose up -d --build
+      - docker build -t penguins-api:latest .
+      - docker run -d --name penguins-api -p 8989:8989 penguins-api:latest
 
   down:
-    desc: Stop API
+    desc: Stop and remove API container
     cmds:
-      - docker compose down
+      - docker stop penguins-api && docker rm penguins-api
 
   logs:
     desc: Tail API logs
     cmds:
-      - docker compose logs -f app
+      - docker logs -f penguins-api
 
   shell:
     desc: Shell into running container
     cmds:
       - docker exec -it penguins-api /bin/bash
+
+  train:
+    desc: Train models inside Docker and save to app/models/
+    cmds:
+      - docker build -t penguins-api:latest .
+      - docker run --rm -v ./app/models:/app/app/models penguins-api:latest python3 train.py
