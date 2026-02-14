@@ -1,53 +1,50 @@
-from typing import Optional
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+import joblib
 import pandas as pd
-from palmerpenguins import load_penguins
+from fastapi import FastAPI, HTTPException
 
-app = FastAPI(title="Penguins API")
+from app.schemas import PenguinFeatures, PredictionResponse
 
-# Load data once at startup
-penguins_df = load_penguins()
+app = FastAPI(title="Penguins ML API")
+
+MODELS_DIR = Path("app/models")
+
+models: dict = {}
 
 
-def _df_to_records(df: pd.DataFrame, limit: int):
-    # Force object dtype so None stays None (not NaN) when serializing
-    df = df.astype(object).where(pd.notnull(df), None)
-    records = df.head(limit).to_dict(orient="records")
-    return records
+@app.on_event("startup")
+def load_models() -> None:
+    for path in sorted(MODELS_DIR.glob("*.joblib")):
+        name = path.stem
+        models[name] = joblib.load(path)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "models_loaded": len(models),
+    }
 
 
-@app.get("/penguins")
-def list_penguins(
-    species: Optional[str] = Query(None, description="Filter by species"),
-    island: Optional[str] = Query(None, description="Filter by island"),
-    sex: Optional[str] = Query(None, description="Filter by sex"),
-    limit: int = Query(100, ge=1, le=500),
-):
-    df = penguins_df.copy()
+@app.post("/predict", response_model=PredictionResponse)
+def predict(features: PenguinFeatures):
+    if not models:
+        raise HTTPException(status_code=503, detail="No models loaded. Run train.py first.")
 
-    if species:
-        df = df[df["species"].str.lower() == species.lower()]
-    if island:
-        df = df[df["island"].str.lower() == island.lower()]
-    if sex:
-        df = df[df["sex"].str.lower() == sex.lower()]
+    if features.model_name not in models:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model '{features.model_name}' not found. Available: {list(models.keys())}",
+        )
 
-    payload = {"count": len(df), "data": _df_to_records(df, limit)}
-    return JSONResponse(content=jsonable_encoder(payload))
+    row = pd.DataFrame([features.model_dump(exclude={"model_name"})])
+    pipeline = models[features.model_name]
+    species = pipeline.predict(row)[0]
+    return PredictionResponse(species=species, model_used=features.model_name)
 
 
-@app.get("/penguins/{row_id}")
-def get_penguin(row_id: int):
-    if row_id < 0 or row_id >= len(penguins_df):
-        raise HTTPException(status_code=404, detail="Penguin not found")
-    row = penguins_df.iloc[row_id].to_frame().T
-    payload = row.astype(object).where(pd.notnull(row), None).to_dict(orient="records")[0]
-    return JSONResponse(content=jsonable_encoder(payload))
+@app.get("/models")
+def list_models():
+    return {"available": list(models.keys())}

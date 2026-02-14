@@ -1,9 +1,0 @@
-services:
-  app:
-    build: .
-    container_name: penguins-api
-    ports:
-      - "8989:8989"
-    environment:
-      - PYTHONUNBUFFERED=1
-    restart: unless-stopped
