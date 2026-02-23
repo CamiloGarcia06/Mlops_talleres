@@ -1,0 +1,12 @@
+[project]
+name = "penguins-api"
+version = "0.1.0"
+description = "API for Palmer Penguins ML predictions"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.30.6",
+    "pandas==2.2.3",
+    "scikit-learn==1.5.2",
+    "joblib==1.4.2",
+]
