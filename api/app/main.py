@@ -8,16 +8,22 @@ from app.schemas import PenguinFeatures, PredictionResponse
 
 app = FastAPI(title="Penguins ML API")
 
-MODELS_DIR = Path("app/models")
+MODELS_DIR = Path("/models")
 
 models: dict = {}
 
 
-@app.on_event("startup")
-def load_models() -> None:
+def _load_models() -> None:
+    """Load all .joblib models from the shared models directory."""
+    models.clear()
     for path in sorted(MODELS_DIR.glob("*.joblib")):
         name = path.stem
         models[name] = joblib.load(path)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    _load_models()
 
 
 @app.get("/health")
@@ -31,7 +37,7 @@ def health():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(features: PenguinFeatures):
     if not models:
-        raise HTTPException(status_code=503, detail="No models loaded. Run train.py first.")
+        raise HTTPException(status_code=503, detail="No models loaded.")
 
     if features.model_name not in models:
         raise HTTPException(
@@ -48,3 +54,10 @@ def predict(features: PenguinFeatures):
 @app.get("/models")
 def list_models():
     return {"available": list(models.keys())}
+
+
+@app.post("/reload")
+def reload_models():
+    """Reload models from the shared volume after training new ones."""
+    _load_models()
+    return {"status": "reloaded", "models_loaded": len(models)}

@@ -2,33 +2,61 @@ version: '3'
 
 tasks:
   build:
-    desc: Build Docker image
+    desc: Build all Docker Compose services
     cmds:
-      - docker build -t penguins-api:latest .
+      - docker compose build
 
   up:
-    desc: Build and start API container
+    desc: Build and start all services
     cmds:
-      - docker build -t penguins-api:latest .
-      - docker run -d --name penguins-api -p 8989:8989 penguins-api:latest
+      - docker compose up -d --build
 
   down:
-    desc: Stop and remove API container
+    desc: Stop and remove all services
     cmds:
-      - docker stop penguins-api && docker rm penguins-api
+      - docker compose down
 
   logs:
+    desc: Tail logs from all services
+    cmds:
+      - docker compose logs -f
+
+  logs:api:
     desc: Tail API logs
     cmds:
-      - docker logs -f penguins-api
+      - docker compose logs -f api
 
-  shell:
-    desc: Shell into running container
+  logs:jupyter:
+    desc: Tail JupyterLab logs
     cmds:
-      - docker exec -it penguins-api /bin/bash
+      - docker compose logs -f jupyter
 
-  train:
-    desc: Train models inside Docker and save to app/models/
+  shell:api:
+    desc: Shell into API container
     cmds:
-      - docker build -t penguins-api:latest .
-      - docker run --rm -v ./app/models:/app/app/models penguins-api:latest python3 train.py
+      - docker compose exec api /bin/bash
+
+  shell:jupyter:
+    desc: Shell into JupyterLab container
+    cmds:
+      - docker compose exec jupyter /bin/bash
+
+  reload:
+    desc: Reload models in the API from the shared volume
+    cmds:
+      - curl -s -X POST http://localhost:8989/reload | python3 -m json.tool
+
+  health:
+    desc: Check API health
+    cmds:
+      - curl -s http://localhost:8989/health | python3 -m json.tool
+
+  models:
+    desc: List available models in the API
+    cmds:
+      - curl -s http://localhost:8989/models | python3 -m json.tool
+
+  restart:
+    desc: Restart all services
+    cmds:
+      - docker compose restart
