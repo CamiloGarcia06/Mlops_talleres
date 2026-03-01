@@ -1,6 +1,15 @@
 version: '3'
 
+vars:
+  DATA_DB_USER: data_user
+  DATA_DB_PASS: data_pass
+  DATA_DB_NAME: penguins_db
+  DATA_DB_PORT: 5433
+  API_URL: http://localhost:8989
+  AIRFLOW_URL: http://localhost:8080
+
 tasks:
+  # ── Lifecycle ──────────────────────────────────────────────
   build:
     desc: Build all Docker Compose services
     cmds:
@@ -16,6 +25,23 @@ tasks:
     cmds:
       - docker compose down
 
+  restart:
+    desc: Restart all services
+    cmds:
+      - docker compose restart
+
+  clean:
+    desc: Stop services and remove volumes (full reset)
+    prompt: This will delete all data (databases, models). Continue?
+    cmds:
+      - docker compose down -v
+
+  ps:
+    desc: Show status of all services
+    cmds:
+      - docker compose ps
+
+  # ── Logs ───────────────────────────────────────────────────
   logs:
     desc: Tail logs from all services
     cmds:
@@ -31,6 +57,7 @@ tasks:
     cmds:
       - docker compose logs -f airflow-webserver airflow-scheduler
 
+  # ── Shell ──────────────────────────────────────────────────
   shell:api:
     desc: Shell into API container
     cmds:
@@ -41,22 +68,74 @@ tasks:
     cmds:
       - docker compose exec airflow-webserver /bin/bash
 
-  reload:
-    desc: Reload models in the API from the shared volume
+  shell:db:
+    desc: Open psql shell in the data database
     cmds:
-      - curl -s -X POST http://localhost:8989/reload | python3 -m json.tool
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}}
 
+  # ── API ────────────────────────────────────────────────────
   health:
     desc: Check API health
     cmds:
-      - curl -s http://localhost:8989/health | python3 -m json.tool
+      - curl -s {{.API_URL}}/health | python3 -m json.tool
 
   models:
     desc: List available models in the API
     cmds:
-      - curl -s http://localhost:8989/models | python3 -m json.tool
+      - curl -s {{.API_URL}}/models | python3 -m json.tool
 
-  restart:
-    desc: Restart all services
+  reload:
+    desc: Reload models in the API from the shared volume
     cmds:
-      - docker compose restart
+      - curl -s -X POST {{.API_URL}}/reload | python3 -m json.tool
+
+  predict:
+    desc: "Run a sample prediction (usage: task predict -- random_forest)"
+    vars:
+      MODEL: '{{.CLI_ARGS | default "random_forest"}}'
+    cmd: >-
+      curl -s -X POST {{.API_URL}}/predict
+      -H "Content-Type: application/json"
+      -d '{"model_name":"{{.MODEL}}","bill_length_mm":39.1,"bill_depth_mm":18.7,"flipper_length_mm":181,"body_mass_g":3750,"island":"Torgersen","sex":"male"}'
+      | python3 -m json.tool
+
+  # ── Database ───────────────────────────────────────────────
+  db:tables:
+    desc: List tables in the data database
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "\dt"
+
+  db:count:
+    desc: Show row counts for penguins tables
+    cmds:
+      - |
+        docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "
+          SELECT 'penguins_raw' AS table_name, COUNT(*) FROM penguins_raw
+          UNION ALL
+          SELECT 'penguins_clean', COUNT(*) FROM penguins_clean;"
+
+  db:preview:
+    desc: Preview first 5 rows of penguins_clean
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "SELECT * FROM penguins_clean LIMIT 5;"
+
+  db:query:
+    desc: "Run a custom SQL query (usage: task db:query -- 'SELECT ...')"
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c '{{.CLI_ARGS}}'
+
+  # ── Airflow ────────────────────────────────────────────────
+  dag:trigger:
+    desc: Trigger the penguins_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags trigger penguins_pipeline
+
+  dag:status:
+    desc: Show recent runs of the penguins_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags list-runs -d penguins_pipeline --limit 5
+
+  dag:unpause:
+    desc: Unpause the penguins_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags unpause penguins_pipeline
