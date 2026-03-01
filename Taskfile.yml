@@ -26,20 +26,20 @@ tasks:
     cmds:
       - docker compose logs -f api
 
-  logs:jupyter:
-    desc: Tail JupyterLab logs
+  logs:airflow:
+    desc: Tail Airflow webserver and scheduler logs
     cmds:
-      - docker compose logs -f jupyter
+      - docker compose logs -f airflow-webserver airflow-scheduler
 
   shell:api:
     desc: Shell into API container
     cmds:
       - docker compose exec api /bin/bash
 
-  shell:jupyter:
-    desc: Shell into JupyterLab container
+  shell:airflow:
+    desc: Shell into Airflow webserver container
     cmds:
-      - docker compose exec jupyter /bin/bash
+      - docker compose exec airflow-webserver /bin/bash
 
   reload:
     desc: Reload models in the API from the shared volume

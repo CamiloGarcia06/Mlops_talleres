@@ -1,11 +1,89 @@
+x-airflow-common: &airflow-common
+  build: ./airflow
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@db-airflow:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    DATA_DB_HOST: db-data
+    DATA_DB_PORT: 5432
+    DATA_DB_USER: data_user
+    DATA_DB_PASSWORD: data_pass
+    DATA_DB_NAME: penguins_db
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - models_data:/models
+  depends_on:
+    db-airflow:
+      condition: service_healthy
+    db-data:
+      condition: service_healthy
+
 services:
-  jupyter:
-    build: ./jupyter
+  db-data:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: data_user
+      POSTGRES_PASSWORD: data_pass
+      POSTGRES_DB: penguins_db
     ports:
-      - "8888:8888"
+      - "5433:5432"
     volumes:
-      - models_data:/models
-      - ./jupyter/notebooks:/app/notebooks
+      - pgdata_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U data_user -d penguins_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-airflow:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - pgdata_airflow:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   api:
     build: ./api
@@ -13,6 +91,9 @@ services:
       - "8989:8989"
     volumes:
       - models_data:/models
+    restart: unless-stopped
 
 volumes:
   models_data:
+  pgdata_data:
+  pgdata_airflow:
