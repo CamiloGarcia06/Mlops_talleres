@@ -1,0 +1,46 @@
+digraph "Project 2" {
+	graph [compound=true fontcolor="#2D3436" fontname="Sans-Serif" fontsize=15 label="Project 2" layout=dot nodesep=0.60 pad=0 rankdir=LR ranksep=0.75 size=10 splines=ortho]
+	node [fixedsize=true fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 height=1.4 imagescale=true labelloc=b shape=box style=rounded width=1.4]
+	edge [color="#7B8894"]
+	subgraph "cluster_MLOps VM" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="MLOps VM" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		subgraph "cluster_docker-compose" {
+			graph [bgcolor="#F3E2A9" fontname="Sans-Serif" fontsize=12 label="docker-compose" labeljust=l pencolor="#AEB6BE" rankdir=RL shape=box style=rounded]
+			subgraph cluster_minio {
+				graph [bgcolor="#D8D8D8" fontname="Sans-Serif" fontsize=12 label=minio labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+				"20c7fd829bb1479eae4f745cca982b16" [label="object store" height=1.9 image="./images/MINIO_wordmark.png" shape=none]
+			}
+			subgraph cluster_inference {
+				graph [bgcolor="#D0E1E8" fontname="Sans-Serif" fontsize=12 label=inference labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+				"1b00a990cd7242a8b0717fdc81e7b8f0" [label="AI model" height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/programming/framework\fastapi.png" shape=none]
+			}
+			subgraph cluster_mlflow {
+				graph [bgcolor="#F392A9" fontname="Sans-Serif" fontsize=12 label=mlflow labeljust=l pencolor="#AEB6BE" rankdir=TB shape=box style=rounded]
+				"84738ce9a1b54026bc15349f02ba678e" [label="Model Registry" height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/onprem/mlops\mlflow.png" shape=none]
+				"4cdc2773dbcc44ae96330dcff367005f" [label=Tracking height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/onprem/mlops\mlflow.png" shape=none]
+			}
+			subgraph cluster_mysql {
+				graph [bgcolor="#FA8258" fontname="Sans-Serif" fontsize=12 label=mysql labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+				a5c0a90e51f243abb2a1456c0fd408cb [label=ML_metadata height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/onprem/database\mysql.png" shape=none]
+			}
+			subgraph cluster_airflow {
+				graph [bgcolor="#AF8258" fontname="Sans-Serif" fontsize=12 label=airflow labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+				f51a321dbed5427fa15db0ecc5f6c830 [label="Airflow system" height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/onprem/workflow\airflow.png" shape=none]
+			}
+		}
+	}
+	subgraph cluster_Internet {
+		graph [bgcolor="#B6E0F8" fontname="Sans-Serif" fontsize=12 label=Internet labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		subgraph "cluster_10.43.101.149:80" {
+			graph [bgcolor="#C6E1E8" fontname="Sans-Serif" fontsize=12 label="10.43.101.149:80" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+			"2f37682289d24051b8a8fb70682043b6" [label="Data API" height=1.9 image="c:\Users\dandiazc\AppData\Local\Programs\Python\Python312\Lib\site-packages\resources/programming/framework\fastapi.png" shape=none]
+		}
+	}
+	"20c7fd829bb1479eae4f745cca982b16" -> "84738ce9a1b54026bc15349f02ba678e" [color=blue constraint=True dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 ltail=cluster_minio minlen=2]
+	"84738ce9a1b54026bc15349f02ba678e" -> "1b00a990cd7242a8b0717fdc81e7b8f0" [color=black constraint=True dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 ltail=cluster_inference minlen=2]
+	"4cdc2773dbcc44ae96330dcff367005f" -> "84738ce9a1b54026bc15349f02ba678e" [color=black constraint=False dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 lhead=cluster_mlflow ltail=cluster_server minlen=2]
+	f51a321dbed5427fa15db0ecc5f6c830 -> "84738ce9a1b54026bc15349f02ba678e" [color=black constraint=False dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 lhead=cluster_airflow minlen=2]
+	f51a321dbed5427fa15db0ecc5f6c830 -> "4cdc2773dbcc44ae96330dcff367005f" [color=black constraint=False dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 ltail=cluster_airflow minlen=2]
+	"4cdc2773dbcc44ae96330dcff367005f" -> a5c0a90e51f243abb2a1456c0fd408cb [color=black constraint=True dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 ltail=cluster_mysql minlen=2]
+	"2f37682289d24051b8a8fb70682043b6" -> f51a321dbed5427fa15db0ecc5f6c830 [color=black dir=both fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 lhead=cluster_airflow ltail="cluster_10.43.101.149:80" minlen=2]
+}
