@@ -31,6 +31,8 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
   user: "${AIRFLOW_UID:-50000}:0"
+  networks:
+    - mlops_net
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -64,6 +66,8 @@ services:
       retries: 5
       start_period: 5s
     restart: always
+    networks:
+      - mlops_net
 
   minio:
     image: quay.io/minio/minio
@@ -78,6 +82,21 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
   
+  data_api:
+    build:
+      context: ./data_api
+      dockerfile: Dockerfile
+    container_name: data_api
+    # Puerto 8080 definido en Dockerfile
+    ports:
+    - "8080:8080"
+    volumes:
+      - ./data_api/covertype_serving.csv:/data/covertype_serving.csv
+      - ./data_api/timestamps.json:/data/timestamps.json
+    networks:
+      - mlops_net
+    restart: always
+
   # inference-api:
   #   build: 
   #     context: .
@@ -285,6 +304,10 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+
+networks:
+  mlops_net:
+    driver: bridge
 
 volumes:
   postgres-db-volume:
