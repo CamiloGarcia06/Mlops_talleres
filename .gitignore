@@ -1,0 +1,13 @@
+# Airflow - Ignorar logs y archivos temporales que bloquean Git
+airflow/logs/
+logs/
+airflow/plugins/
+plugins/
+
+# Seguridad - 
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
