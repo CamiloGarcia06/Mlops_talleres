@@ -10,14 +10,21 @@ x-airflow-common: &airflow-common
     DATA_DB_PORT: 5432
     DATA_DB_USER: data_user
     DATA_DB_PASSWORD: data_pass
-    DATA_DB_NAME: penguins_db
+    DATA_DB_NAME: covertype_db
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: minioadmin
+    MINIO_SECRET_KEY: minioadmin
+    MINIO_BUCKET: models
+    COVERTYPE_API_URL: http://host.docker.internal:8090
+    GROUP_NUMBER: 2
   volumes:
     - ./dags:/opt/airflow/dags
-    - models_data:/models
   depends_on:
     db-airflow:
       condition: service_healthy
     db-data:
+      condition: service_healthy
+    minio:
       condition: service_healthy
 
 services:
@@ -26,13 +33,13 @@ services:
     environment:
       POSTGRES_USER: data_user
       POSTGRES_PASSWORD: data_pass
-      POSTGRES_DB: penguins_db
+      POSTGRES_DB: covertype_db
     ports:
       - "5433:5432"
     volumes:
       - pgdata_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U data_user -d penguins_db"]
+      test: ["CMD-SHELL", "pg_isready -U data_user -d covertype_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,6 +58,36 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/models
+    restart: "no"
+
   airflow-init:
     <<: *airflow-common
     user: "0"
@@ -58,7 +95,6 @@ services:
     command:
       - -c
       - |
-        chown -R 50000:0 /models &&
         su -s /bin/bash airflow -c '
           airflow db migrate &&
           airflow users create \
@@ -93,11 +129,40 @@ services:
     build: ./api
     ports:
       - "8989:8989"
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: models
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  jupyter:
+    build: ./jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      DATA_DB_HOST: db-data
+      DATA_DB_PORT: 5432
+      DATA_DB_USER: data_user
+      DATA_DB_PASSWORD: data_pass
+      DATA_DB_NAME: covertype_db
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: models
     volumes:
-      - models_data:/models
+      - ./jupyter/notebooks:/home/jovyan/work
+    depends_on:
+      db-data:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  models_data:
   pgdata_data:
   pgdata_airflow:
+  minio_data:

@@ -1,0 +1,3 @@
+[submodule "MLOPS_PUJ"]
+	path = MLOPS_PUJ
+	url = https://github.com/CristianDiazAlvarez/MLOPS_PUJ.git

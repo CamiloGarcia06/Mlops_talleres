@@ -9,8 +9,6 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN uv sync --no-install-project --no-dev
 
-COPY notebooks/ ./notebooks/
-
 EXPOSE 8888
 
 CMD ["uv", "run", "jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--ServerApp.token=''", "--ServerApp.disable_check_xsrf=True"]

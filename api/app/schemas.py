@@ -1,16 +1,23 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
-class PenguinFeatures(BaseModel):
-    bill_length_mm: float
-    bill_depth_mm: float
-    flipper_length_mm: float
-    body_mass_g: float
-    island: str
-    sex: str
-    model_name: str
+class CovertypeFeatures(BaseModel):
+    Elevation: float
+    Aspect: float
+    Slope: float
+    Horizontal_Distance_To_Hydrology: float
+    Vertical_Distance_To_Hydrology: float
+    Horizontal_Distance_To_Roadways: float
+    Hillshade_9am: float
+    Hillshade_Noon: float
+    Hillshade_3pm: float
+    Horizontal_Distance_To_Fire_Points: float
+    Wilderness_Area: str
+    Soil_Type: str
+    model_name: str = "random_forest"
 
 
 class PredictionResponse(BaseModel):
-    species: str
+    cover_type: str
     model_used: str

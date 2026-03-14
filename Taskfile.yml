@@ -3,7 +3,7 @@ version: '3'
 vars:
   DATA_DB_USER: data_user
   DATA_DB_PASS: data_pass
-  DATA_DB_NAME: penguins_db
+  DATA_DB_NAME: covertype_db
   DATA_DB_PORT: 5433
   API_URL: http://localhost:8989
   AIRFLOW_URL: http://localhost:8080
@@ -18,7 +18,7 @@ tasks:
   up:
     desc: Build and start all services
     cmds:
-      - docker compose up -d --build
+      - docker compose up -d
 
   down:
     desc: Stop and remove all services
@@ -32,7 +32,7 @@ tasks:
 
   clean:
     desc: Stop services and remove volumes (full reset)
-    prompt: This will delete all data (databases, models). Continue?
+    prompt: This will delete all data (databases, minio, models). Continue?
     cmds:
       - docker compose down -v
 
@@ -73,7 +73,49 @@ tasks:
     cmds:
       - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}}
 
-  # ── API ────────────────────────────────────────────────────
+  # ── Database ───────────────────────────────────────────────
+  db:tables:
+    desc: List tables in the data database
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "\dt"
+
+  db:count:
+    desc: Show row count per batch in covertype_raw
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "SELECT batch, COUNT(*) FROM covertype_raw GROUP BY batch ORDER BY batch;"
+
+  db:preview:
+    desc: Preview first 5 rows of covertype_training
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "SELECT * FROM covertype_training LIMIT 5;"
+
+  db:query:
+    desc: "Run a custom SQL query (usage: task db:query -- 'SELECT ...')"
+    cmds:
+      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c {{.CLI_ARGS}}
+
+  # ── Covertype Pipeline ────────────────────────────────────
+  dag:trigger:
+    desc: Trigger the covertype_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags trigger covertype_pipeline
+
+  dag:status:
+    desc: Show recent runs of the covertype_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags list-runs -d covertype_pipeline --limit 10
+
+  dag:unpause:
+    desc: Unpause the covertype_pipeline DAG (starts 5-min schedule)
+    cmds:
+      - docker compose exec airflow-webserver airflow dags unpause covertype_pipeline
+
+  dag:pause:
+    desc: Pause the covertype_pipeline DAG
+    cmds:
+      - docker compose exec airflow-webserver airflow dags pause covertype_pipeline
+
+  # ── Inference API ──────────────────────────────────────────
   health:
     desc: Check API health
     cmds:
@@ -85,57 +127,14 @@ tasks:
       - curl -s {{.API_URL}}/models | python3 -m json.tool
 
   reload:
-    desc: Reload models in the API from the shared volume
+    desc: Reload models in the API from MinIO
     cmds:
       - curl -s -X POST {{.API_URL}}/reload | python3 -m json.tool
 
   predict:
-    desc: "Run a sample prediction (usage: task predict -- random_forest)"
-    vars:
-      MODEL: '{{.CLI_ARGS | default "random_forest"}}'
+    desc: Run a sample prediction
     cmd: >-
       curl -s -X POST {{.API_URL}}/predict
       -H "Content-Type: application/json"
-      -d '{"model_name":"{{.MODEL}}","bill_length_mm":39.1,"bill_depth_mm":18.7,"flipper_length_mm":181,"body_mass_g":3750,"island":"Torgersen","sex":"male"}'
+      -d '{"Elevation":2596,"Aspect":51,"Slope":3,"Horizontal_Distance_To_Hydrology":258,"Vertical_Distance_To_Hydrology":0,"Horizontal_Distance_To_Roadways":510,"Hillshade_9am":221,"Hillshade_Noon":232,"Hillshade_3pm":148,"Horizontal_Distance_To_Fire_Points":6279,"Wilderness_Area":"Rawah","Soil_Type":"C7744","model_name":"random_forest"}'
       | python3 -m json.tool
-
-  # ── Database ───────────────────────────────────────────────
-  db:tables:
-    desc: List tables in the data database
-    cmds:
-      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "\dt"
-
-  db:count:
-    desc: Show row counts for penguins tables
-    cmds:
-      - |
-        docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "
-          SELECT 'penguins_raw' AS table_name, COUNT(*) FROM penguins_raw
-          UNION ALL
-          SELECT 'penguins_clean', COUNT(*) FROM penguins_clean;"
-
-  db:preview:
-    desc: Preview first 5 rows of penguins_clean
-    cmds:
-      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c "SELECT * FROM penguins_clean LIMIT 5;"
-
-  db:query:
-    desc: "Run a custom SQL query (usage: task db:query -- 'SELECT ...')"
-    cmds:
-      - docker compose exec db-data psql -U {{.DATA_DB_USER}} -d {{.DATA_DB_NAME}} -c '{{.CLI_ARGS}}'
-
-  # ── Airflow ────────────────────────────────────────────────
-  dag:trigger:
-    desc: Trigger the penguins_pipeline DAG
-    cmds:
-      - docker compose exec airflow-webserver airflow dags trigger penguins_pipeline
-
-  dag:status:
-    desc: Show recent runs of the penguins_pipeline DAG
-    cmds:
-      - docker compose exec airflow-webserver airflow dags list-runs -d penguins_pipeline --limit 5
-
-  dag:unpause:
-    desc: Unpause the penguins_pipeline DAG
-    cmds:
-      - docker compose exec airflow-webserver airflow dags unpause penguins_pipeline

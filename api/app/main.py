@@ -1,24 +1,45 @@
-from pathlib import Path
+import io
+import os
+import tempfile
 
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from minio import Minio
 
-from app.schemas import PenguinFeatures, PredictionResponse
+from app.schemas import CovertypeFeatures, PredictionResponse
 
-app = FastAPI(title="Penguins ML API")
-
-MODELS_DIR = Path("/models")
+app = FastAPI(title="Covertype Inference API")
 
 models: dict = {}
 
 
+def _get_minio():
+    return Minio(
+        os.environ["MINIO_ENDPOINT"],
+        access_key=os.environ["MINIO_ACCESS_KEY"],
+        secret_key=os.environ["MINIO_SECRET_KEY"],
+        secure=False,
+    )
+
+
 def _load_models() -> None:
-    """Load all .joblib models from the shared models directory."""
+    """Load all .joblib models from MinIO."""
     models.clear()
-    for path in sorted(MODELS_DIR.glob("*.joblib")):
-        name = path.stem
-        models[name] = joblib.load(path)
+    try:
+        client = _get_minio()
+        bucket = os.environ["MINIO_BUCKET"]
+        objects = client.list_objects(bucket)
+        for obj in objects:
+            if obj.object_name.endswith(".joblib"):
+                name = obj.object_name.replace(".joblib", "")
+                response = client.get_object(bucket, obj.object_name)
+                data = io.BytesIO(response.read())
+                response.close()
+                response.release_conn()
+                models[name] = joblib.load(data)
+    except Exception as e:
+        print(f"Warning: Could not load models from MinIO: {e}")
 
 
 @app.on_event("startup")
@@ -28,16 +49,13 @@ def startup() -> None:
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "models_loaded": len(models),
-    }
+    return {"status": "ok", "models_loaded": len(models)}
 
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(features: PenguinFeatures):
+def predict(features: CovertypeFeatures):
     if not models:
-        raise HTTPException(status_code=503, detail="No models loaded.")
+        raise HTTPException(status_code=503, detail="No models loaded. Run the pipeline first.")
 
     if features.model_name not in models:
         raise HTTPException(
@@ -47,8 +65,8 @@ def predict(features: PenguinFeatures):
 
     row = pd.DataFrame([features.model_dump(exclude={"model_name"})])
     pipeline = models[features.model_name]
-    species = pipeline.predict(row)[0]
-    return PredictionResponse(species=species, model_used=features.model_name)
+    cover_type = str(pipeline.predict(row)[0])
+    return PredictionResponse(cover_type=cover_type, model_used=features.model_name)
 
 
 @app.get("/models")
@@ -58,6 +76,6 @@ def list_models():
 
 @app.post("/reload")
 def reload_models():
-    """Reload models from the shared volume after training new ones."""
+    """Reload models from MinIO after training new ones."""
     _load_models()
     return {"status": "reloaded", "models_loaded": len(models)}

@@ -1,7 +1,7 @@
 [project]
-name = "penguins-api"
+name = "covertype-api"
 version = "0.1.0"
-description = "API for Palmer Penguins ML predictions"
+description = "Inference API for Covertype ML predictions (loads models from MinIO)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.115.6",
@@ -9,5 +9,5 @@ dependencies = [
     "pandas==2.2.3",
     "scikit-learn==1.8.0",
     "joblib==1.4.2",
-    "dill==0.3.9",
+    "minio>=7.2.0",
 ]
