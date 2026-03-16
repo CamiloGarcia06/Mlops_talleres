@@ -1,6 +1,6 @@
 # Covertype ML Pipeline
 
-Pipeline de Machine Learning orquestado con **Apache Airflow** para clasificar tipos de cobertura forestal ([Covertype Dataset](https://archive.ics.uci.edu/dataset/31/covertype)). El sistema consume datos desde una API externa cada 5 minutos, almacena modelos entrenados en **MinIO** (S3-compatible) y los sirve mediante una **API FastAPI** para inferencia en tiempo real.
+Pipeline de Machine Learning orquestado con **Apache Airflow** para clasificar tipos de cobertura forestal ([Covertype Dataset](https://archive.ics.uci.edu/dataset/31/covertype)). El sistema consume datos desde una API externa cada 5 minutos, los procesa a través de un pipeline de 4 etapas (validación servidor → ingesta → transformación → limpieza), almacena modelos entrenados en **MinIO** (S3-compatible) y los sirve mediante una **API FastAPI** para inferencia en tiempo real.
 
 ---
 
@@ -42,13 +42,32 @@ graph TB
 
 ---
 
+## Tablas PostgreSQL (`covertype_db`)
+
+El pipeline mantiene tres tablas en la base de datos `covertype_db`, cada una representando una capa del procesamiento:
+
+| Tabla | Descripcion |
+|-------|-------------|
+| `forest_raw` | Capa de auditoría. Almacena el JSON completo de cada batch (`batch_id`, `data_json`, `ingested_at`). Un registro por batch. |
+| `forest_processed` | Capa transformada. Columnas nombradas y tipos correctos. Puede contener nulos o duplicados. |
+| `forest_training` | Capa limpia. Lista para entrenar: sin nulos, sin duplicados, sin valores físicamente imposibles. Fuente de datos para JupyterLab. |
+
+### Reglas de limpieza aplicadas en `clean_for_training`
+
+- Eliminación de filas con cualquier valor nulo (`dropna`)
+- Eliminación de duplicados exactos por features del dataset
+- Filtro `Elevation > 0` (elevación negativa o cero no es válida)
+- Filtro `Cover_Type` entre 1 y 7 (únicos valores válidos del dataset)
+
+
 ## Flujo de Datos
 
-1. **Ingesta automatica:** El DAG `covertype_pipeline` consume la API externa (`http://host.docker.internal:8090/data`) cada 5 minutos, obteniendo lotes de datos de cobertura forestal.
-2. **Almacenamiento:** Los datos crudos se insertan en PostgreSQL (`db-data`) en la tabla `covertype_raw` con seguimiento por lote (`batch`).
-3. **Entrenamiento:** El DAG entrena multiples clasificadores (Random Forest, Gradient Boosting, Logistic Regression, MLP, SVM) y sube los modelos `.joblib` a MinIO.
-4. **Inferencia:** La API FastAPI carga los modelos desde MinIO al iniciar y expone endpoints de prediccion.
-5. **Experimentacion:** JupyterLab permite entrenar y evaluar modelos interactivamente, conectandose a la misma base de datos y MinIO.
+1. **Validación de infraestructura:** El DAG verifica conectividad con la API y la base de datos, crea la base de datos si no existe y provisiona el schema (`forest_raw`, `forest_processed`, `forest_training`).
+2. **Ingesta RAW:** Descarga un lote desde la API externa y lo guarda en `forest_raw` como JSON para auditoría.
+3. **Transformación:** Lee `forest_raw`, mapea las columnas posicionales del dataset Covertype, castea tipos y escribe en `forest_processed`.
+4. **Limpieza para entrenamiento:** Elimina nulos, duplicados y valores físicamente imposibles de `forest_processed` y escribe el resultado limpio en `forest_training`.
+5. **Inferencia:** La API FastAPI carga los modelos desde MinIO al iniciar y expone endpoints de prediccion.
+6. **Experimentacion:** JupyterLab lee directamente de `forest_training` (ya limpia) para entrenar y evaluar modelos interactivamente.
 
 ---
 
@@ -64,18 +83,23 @@ sequenceDiagram
     participant MIO as MinIO<br/>(bucket: models)
 
     loop Cada 5 minutos
+        AF->>DB: Crea DB + schema si no existen
         AF->>EXT: GET /data?group_number=2
-        EXT-->>AF: JSON {batch_number, data}
-        AF->>DB: INSERT INTO covertype_raw
-        AF->>DB: SELECT * (datos entrenamiento)
-        DB-->>AF: Dataset completo
-        AF->>AF: Entrena modelos (RF, GB, LR, MLP, SVM)
-        AF->>MIO: Upload .joblib (modelos entrenados)
+        EXT-->>AF: JSON {batch_number, data[]}
+        AF->>DB: INSERT INTO forest_raw (JSON blob)
+        AF->>DB: SELECT data_json FROM forest_raw
+        DB-->>AF: Datos del batch
+        AF->>AF: Mapea columnas + castea tipos
+        AF->>DB: INSERT INTO forest_processed
+        AF->>DB: SELECT * FROM forest_processed
+        DB-->>AF: Datos procesados
+        AF->>AF: Elimina nulos / duplicados / outliers
+        AF->>DB: INSERT INTO forest_training
     end
 ```
 
 **Detalles de la peticion:**
-- **URL:** `http://host.docker.internal:8090/data`
+- **URL:** `http://host.docker.internal:8080/data`
 - **Metodo:** GET
 - **Parametro:** `group_number=2`
 - **Respuesta:** JSON con `batch_number` (int) y `data` (array de registros con 13 features)
@@ -148,7 +172,7 @@ graph LR
 
 | Servicio | Puerto Host | Puerto Contenedor | URL |
 |----------|-------------|-------------------|-----|
-| Airflow Webserver | 8080 | 8080 | http://localhost:8080 |
+| Airflow Webserver | 8090 | 8080 | http://localhost:8080 |
 | API FastAPI | 8989 | 8989 | http://localhost:8989 |
 | JupyterLab | 8888 | 8888 | http://localhost:8888 |
 | PostgreSQL (datos) | 5433 | 5432 | localhost:5433 |
