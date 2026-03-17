@@ -27,7 +27,7 @@ graph TB
         JUP["JupyterLab :8888"]
     end
 
-    EXT_API["API Externa<br/>host:8090"]
+    EXT_API["API Externa<br/>host:8080"]
 
     SCHED -- metadata --> DB_AIR
     SCHED -- "GET /data?group_number=2" --> EXT_API
