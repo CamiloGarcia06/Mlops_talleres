@@ -77,7 +77,7 @@ El DAG `covertype_pipeline` (`dags/covertype_pipeline.py`) se ejecuta cada **5 m
 
 ```mermaid
 sequenceDiagram
-    participant EXT as API Externa<br/>(host:8090)
+    participant EXT as API Externa<br/>(host:8080)
     participant AF as Airflow<br/>Scheduler
     participant DB as PostgreSQL<br/>(db-data)
     participant MIO as MinIO<br/>(bucket: models)
@@ -172,7 +172,7 @@ graph LR
 
 | Servicio | Puerto Host | Puerto Contenedor | URL |
 |----------|-------------|-------------------|-----|
-| Airflow Webserver | 8090 | 8080 | http://localhost:8080 |
+| Airflow Webserver | 8090 | 8080 | http://localhost:8090 |
 | API FastAPI | 8989 | 8989 | http://localhost:8989 |
 | JupyterLab | 8888 | 8888 | http://localhost:8888 |
 | PostgreSQL (datos) | 5433 | 5432 | localhost:5433 |
@@ -411,7 +411,6 @@ curl -X POST http://localhost:8989/reload
 │   └── requirements.txt            # pandas, scikit-learn, minio, etc.
 ├── dags/
 │   ├── covertype_pipeline.py       # DAG: ingesta API + entrenamiento (cada 5 min)
-│   └── penguins_pipeline.py        # DAG: entrenamiento penguins (manual)
 ├── api/
 │   ├── Dockerfile                  # Imagen API (python:3.12-slim + uv)
 │   ├── pyproject.toml              # Dependencias de la API
