@@ -1,82 +1,82 @@
 # MLOps Taller — MLflow
 
-MLOps workshop (taller) demonstrating a full ML experiment lifecycle using MLflow, JupyterLab, MinIO, PostgreSQL, and FastAPI — all orchestrated with Docker Compose.
+Taller de MLOps que demuestra el ciclo de vida completo de un experimento de ML usando MLflow, JupyterLab, MinIO, PostgreSQL y FastAPI — todo orquestado con Docker Compose.
 
-## Commands
+## Comandos
 
-### Start the full stack
+### Levantar el stack completo
 ```bash
 docker compose up --build
 ```
 
-### Start in background
+### Levantar en segundo plano
 ```bash
 docker compose up -d --build
 ```
 
-### Stop and remove volumes (full reset)
+### Apagar y eliminar volúmenes (reset completo)
 ```bash
 docker compose down -v
 ```
 
-### Rebuild a single service
+### Reconstruir un servicio individual
 ```bash
 docker compose up --build jupyter
 docker compose up --build api
 ```
 
-### View logs for a service
+### Ver logs de un servicio
 ```bash
 docker compose logs -f mlflow
 docker compose logs -f api
 ```
 
-### Local Python environment (uv)
+### Entorno Python local (uv)
 ```bash
-uv sync           # install dependencies from pyproject.toml
-uv run python     # run python in the venv
+uv sync           # instala dependencias desde pyproject.toml
+uv run python     # ejecuta python en el venv
 ```
 
-## Architecture
+## Arquitectura
 
-### Services (docker-compose.yml)
+### Servicios (docker-compose.yml)
 
-| Service | Port | Purpose |
+| Servicio | Puerto | Propósito |
 |---|---|---|
-| `mlflow-server` | 5000 | MLflow Tracking Server + artifact proxy |
+| `mlflow-server` | 5000 | MLflow Tracking Server + proxy de artefactos |
 | `jupyterlab` | 8888 | JupyterLab (token: `taller2026`) |
-| `inference-api` | 8000 | FastAPI inference server |
-| `minio` | 9000/9001 | S3-compatible artifact storage (console: 9001) |
-| `mlflow-db` | 5432 | PostgreSQL for MLflow metadata |
-| `data-db` | 5433 | PostgreSQL for Wine dataset |
+| `inference-api` | 8000 | Servidor de inferencia FastAPI |
+| `minio` | 9000/9001 | Almacenamiento de artefactos compatible con S3 (consola: 9001) |
+| `mlflow-db` | 5432 | PostgreSQL para metadata de MLflow |
+| `data-db` | 5433 | PostgreSQL para el dataset Wine |
 
-### Startup dependency chain
-`mlflow-db` + `data-db` + `minio` → `minio-setup` (creates bucket) → `mlflow-server` → `jupyter` + `api`
+### Cadena de dependencias de arranque
+`mlflow-db` + `data-db` + `minio` → `minio-setup` (crea el bucket) → `mlflow-server` → `jupyter` + `api`
 
-### Two separate databases
-- **mlflow-db** (`mlflow_metadata`): stores MLflow experiment runs, metrics, parameters. User: `mlflow` / `mlflow_secret`.
-- **data-db** (`ml_datasets`): stores the Wine dataset. User: `datauser` / `data_secret`. Tables initialized via `init-scripts/init_data_db.sql`: `wine_raw`, `wine_processed`, `experiment_log`.
+### Dos bases de datos separadas
+- **mlflow-db** (`mlflow_metadata`): almacena los runs, métricas y parámetros de MLflow. Usuario: `mlflow` / `mlflow_secret`.
+- **data-db** (`ml_datasets`): almacena el dataset Wine. Usuario: `datauser` / `data_secret`. Tablas inicializadas en `init-scripts/init_data_db.sql`: `wine_raw`, `wine_processed`, `experiment_log`.
 
-### Artifact storage
-MLflow is configured with `--serve-artifacts`, meaning it proxies all artifact access through itself (port 5000) rather than requiring direct MinIO access. Artifacts are stored in the `mlflow-artifacts` S3 bucket on MinIO.
+### Almacenamiento de artefactos
+MLflow está configurado con `--serve-artifacts`, lo que significa que actúa como proxy de acceso a los artefactos (puerto 5000) sin requerir acceso directo a MinIO. Los artefactos se guardan en el bucket `mlflow-artifacts` de MinIO.
 
 ### Dockerfiles
-Both `api/Dockerfile` and `jupyter/Dockerfile` use `uv` (from `ghcr.io/astral-sh/uv`) for fast dependency installation instead of pip.
+Tanto `api/Dockerfile` como `jupyter/Dockerfile` usan `uv` (desde `ghcr.io/astral-sh/uv`) para instalar dependencias de forma más rápida que pip.
 
-### Notebook workflow (`jupyter/notebooks/01_experimentos_mlflow.ipynb`)
-The single notebook covers the full ML workflow:
-1. Load Wine dataset (sklearn) → save to `wine_raw` in data-db
-2. Normalize features → save to `wine_processed`
-3. Run 23 TensorFlow/Keras experiments with varied architectures and hyperparameters
-4. Log each run to MLflow (metrics, params, model, artifacts)
-5. Promote the best model to **Production** stage in MLflow Model Registry
+### Flujo del notebook (`jupyter/notebooks/01_experimentos_mlflow.ipynb`)
+El notebook cubre el flujo completo de ML:
+1. Cargar dataset Wine (sklearn) → guardar en `wine_raw` en data-db
+2. Normalizar features → guardar en `wine_processed`
+3. Ejecutar 23 experimentos con TensorFlow/Keras variando arquitecturas e hiperparámetros
+4. Registrar cada run en MLflow (métricas, parámetros, modelo, artefactos)
+5. Promover el mejor modelo al stage **Production** en el MLflow Model Registry
 
-### FastAPI inference service (`api/main.py`)
-Loads the Production-staged model from MLflow Model Registry at startup and exposes a prediction endpoint. Swagger UI available at `http://localhost:8000/docs`.
+### Servicio de inferencia FastAPI (`api/main.py`)
+Carga el modelo en stage Production desde el MLflow Model Registry al iniciar y expone un endpoint de predicción. Swagger UI disponible en `http://localhost:8000/docs`.
 
-## Key Environment Variables (set in docker-compose.yml)
+## Variables de entorno clave (definidas en docker-compose.yml)
 
-| Variable | Value | Used by |
+| Variable | Valor | Usado por |
 |---|---|---|
 | `MLFLOW_TRACKING_URI` | `http://mlflow-server:5000` | jupyter, api |
 | `MLFLOW_S3_ENDPOINT_URL` | `http://minio:9000` | mlflow-server, jupyter, api |
