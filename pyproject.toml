@@ -1,0 +1,18 @@
+[project]
+name = "mlops-taller"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "boto3>=1.42.73",
+    "matplotlib>=3.10.8",
+    "mlflow>=3.10.1",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "psycopg2-binary>=2.9.11",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "sqlalchemy>=2.0.48",
+    "tensorflow>=2.21.0",
+]

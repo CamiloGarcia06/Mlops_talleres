@@ -17,12 +17,12 @@ services:
   # ─────────────────────────────────────────────
   # 1. Base de datos exclusiva para MLflow
   # ─────────────────────────────────────────────
-  mflow-db:
+  mlflow-db:
     image: postgres:15-alpine
     container_name: mlflow-db
     restart: unless-stopped # Se reinicia solo a menos que lo haya apagado manualmente.
     environment:
-      POSTGRES_USER: mflow
+      POSTGRES_USER: mlflow
       POSTGRES_PASSWORD: mlflow_secret
       POSTGRES_DB: mlflow_metadata
     volumes:
@@ -50,7 +50,7 @@ services:
       POSTGRES_DB: ml_datasets
     volumes:
       - data_db_data:/var/lib/postgresql/data
-      - ./init-scripts/init_data_db.sql:/docker-entrypoint.initdb.d/init.sql # Esta carpeta hace que cualquier archivo sql se ejecute una vez al iniciar el contenedor y la base de datos no existe. Si el volumen ya existe al iniciar, no lo ejecuta.
+      - ./init-scripts/init_data_db.sql:/docker-entrypoint-initdb.d/init.sql # Esta carpeta hace que cualquier archivo sql se ejecute una vez al iniciar el contenedor y la base de datos no existe. Si el volumen ya existe al iniciar, no lo ejecuta.
     ports:
       - "5433:5432"
     healthcheck:
@@ -106,7 +106,7 @@ services:
     # mc mb (make bucket) crea el bucket en caso de que no existe (ignore-existing)
     # mc anonymous set download establece permisos de lectura y descarga publicos en el bucket sin necesidad de credenciales.
     entrypoint: >
-      /bin/sh -c "configs:
+      /bin/sh -c "
         mc alias set local http://minio:9000 minioadmin minioadmin123;
         mc mb --ignore-existing local/mlflow-artifacts;
         mc anonymous set download local/mlflow-artifacts;
@@ -184,7 +184,7 @@ services:
       JUPYTER_ENABLE_LAB: "yes"
       JUPYTER_TOKEN: "taller2026"
     volumes:
-      - ./jupyter/notebooks:/home/joyvan/work
+      - ./jupyter/notebooks:/home/jovyan/work
     ports:
       - "8888:8888"
     networks:
@@ -200,7 +200,7 @@ services:
     container_name: inference-api
     restart: unless-stopped
     depends_on:
-      mflow:
+      mlflow:
         condition: service_healthy
     environment:
       MLFLOW_TRACKING_URI: http://mlflow-server:5000
@@ -228,7 +228,7 @@ networks:
   mlops-net:
     driver: bridge
 
-# El network es el que merpite que se hablen los servicios entre si
+# El network es el que permite que se hablen los servicios entre si
 # servicio_origen   servicio_destino      Por qué se conectan?
 # mlflow-server     → mlflow-db:5432      guarda metadata de experimentos (runs, métricas, parámetros)
 # mlflow-server     → minio:9000          sube los modelos y artefactos al bucket
