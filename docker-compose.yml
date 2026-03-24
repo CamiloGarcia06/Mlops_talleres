@@ -119,7 +119,9 @@ services:
   # 5. MLflow Tracking Server
   # ─────────────────────────────────────────────
   mlflow:
-    image: python:3.11-slim
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
     container_name: mlflow-server
     restart: unless-stopped
     depends_on:
@@ -131,27 +133,8 @@ services:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin123
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-    # Crea una terminal de shell
-    # Instala dependencias
-    # mlflow server: el servidor
-    # 1. Guarde la metadata de mlflow en el postgres de mlflow
-    # 2. Guarde los artefactos (modelos, archivos) en el bucket s3 de minio
-    # 3. Esa definición de host esuche en todos los puertos del contenedor
-    # 5. Puerto 5000 es dónde escucha el servidor
-    # 6. --serve-artifacts habilita a MLFlow como proxy de artefactos.
-    # MLFlow se comunica con MinIO y sirve el modelo dentro de MLFlow. Esto en lugar de tener que descargar los modelos del bucket para poder utilizarlos.
-    command: >
-      /bin/sh -c "
-        pip install mlflow psycopg2-binary boto3 --quiet &&
-        mlflow server
-          --backend-store-uri postgresql://mlflow:mlflow_secret@mlflow-db:5432/mlflow_metadata
-          --default-artifact-root s3://mlflow-artifacts/
-          --host 0.0.0.0
-          --port 5000
-          --serve-artifacts
-      "
     ports:
-      - "5000:5000"
+      - "5001:5000"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
       interval: 15s

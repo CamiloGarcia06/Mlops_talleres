@@ -43,7 +43,7 @@ uv run python     # ejecuta python en el venv
 
 | Servicio | Puerto | Propósito |
 |---|---|---|
-| `mlflow-server` | 5000 | MLflow Tracking Server + proxy de artefactos |
+| `mlflow-server` | 5001 | MLflow Tracking Server + proxy de artefactos |
 | `jupyterlab` | 8888 | JupyterLab (token: `taller2026`) |
 | `inference-api` | 8000 | Servidor de inferencia FastAPI |
 | `minio` | 9000/9001 | Almacenamiento de artefactos compatible con S3 (consola: 9001) |
@@ -67,12 +67,11 @@ Tanto `api/Dockerfile` como `jupyter/Dockerfile` usan `uv` (desde `ghcr.io/astra
 El notebook cubre el flujo completo de ML:
 1. Cargar dataset Wine (sklearn) → guardar en `wine_raw` en data-db
 2. Normalizar features → guardar en `wine_processed`
-3. Ejecutar 23 experimentos con TensorFlow/Keras variando arquitecturas e hiperparámetros
-4. Registrar cada run en MLflow (métricas, parámetros, modelo, artefactos)
-5. Promover el mejor modelo al stage **Production** en el MLflow Model Registry
+3. Entrenar 3 modelos simples (DecisionTree, RandomForest, LogisticRegression) y registrar métricas en MLflow
+4. Registrar los 3 modelos en el MLflow Model Registry y promover el mejor a **Production**
 
 ### Servicio de inferencia FastAPI (`api/main.py`)
-Carga el modelo en stage Production desde el MLflow Model Registry al iniciar y expone un endpoint de predicción. Swagger UI disponible en `http://localhost:8000/docs`.
+Al iniciar, carga todas las versiones registradas en el MLflow Model Registry. Expone endpoints para predecir con cualquier modelo por nombre y recargar modelos sin reiniciar. Swagger UI disponible en `http://localhost:8000/docs`.
 
 ## Variables de entorno clave (definidas en docker-compose.yml)
 
