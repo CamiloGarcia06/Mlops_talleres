@@ -28,7 +28,7 @@ services:
     volumes:
       - mlflow_db_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow_metadata"]
       interval: 10s
@@ -52,7 +52,7 @@ services:
       - data_db_data:/var/lib/postgresql/data
       - ./init-scripts/init_data_db.sql:/docker-entrypoint-initdb.d/init.sql # Esta carpeta hace que cualquier archivo sql se ejecute una vez al iniciar el contenedor y la base de datos no existe. Si el volumen ya existe al iniciar, no lo ejecuta.
     ports:
-      - "5433:5432"
+      - "5435:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U datauser -d ml_datasets"]
       interval: 10s
@@ -78,8 +78,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000" # API S3
-      - "9001:9001" # Consola Web
+      - "9002:9000" # API S3
+      - "9003:9001" # Consola Web
     healthcheck:
     # Puedo hacerlo sin shell porque con el binario de CMD es suficiente, no necesito un proceso extra.
     # mc es el cliente con la función ready dentro.
@@ -134,7 +134,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin123
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     ports:
-      - "5001:5000"
+      - "5002:5000"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
       interval: 15s
@@ -169,7 +169,7 @@ services:
     volumes:
       - ./jupyter/notebooks:/home/jovyan/work
     ports:
-      - "8888:8888"
+      - "8889:8888"
     networks:
       - mlops-net
 
@@ -191,7 +191,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin123
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     ports:
-      - "8000:8000"
+      - "8001:8000"
     networks:
       - mlops-net
 
