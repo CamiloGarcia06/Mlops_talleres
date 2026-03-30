@@ -26,25 +26,7 @@ Locust Master ──► API de Inferencia (FastAPI) ──► MLflow Server
 
 ---
 
-## Estructura del proyecto
 
-```
-taller-locust/
-├── docker-compose.yaml           # API de inferencia con recursos limitados
-├── docker-compose.locust.yaml    # Pruebas de carga con Locust
-├── locustfile.py                 # Script de carga (stress + soak)
-├── imagenes/                     # Capturas de los experimentos
-│   ├── 01_mlflow_runs.png
-│   ├── 02_mlflow_models.png
-│   ├── 03_locust_1_replica.png
-│   ├── 04_locust_2_replicas.png
-│   ├── 05_locust_4_replicas.png
-│   ├── 06_locust_8_replicas.png
-│   ├── 07_vscode_compose_api.png
-│   └── 08_vscode_compose_locust.png
-├── resultados/                   # CSVs exportados por Locust
-└── README.md
-```
 
 ---
 
@@ -65,7 +47,9 @@ Se entrenaron 24 modelos desde JupyterLab (**http://localhost:8889**, token: `ta
 
 Los modelos se registraron en MLflow bajo el nombre `wine-classifier-production`.
 
-![MLflow runs](imagenes/01_mlflow_runs.png)
+![MLflow runs]
+<img width="1920" height="412" alt="image" src="https://github.com/user-attachments/assets/d28cd34e-f60e-48bd-be1a-9e9c8a81da42" />
+
 
 ![MLflow models](imagenes/02_mlflow_models.png)
 
