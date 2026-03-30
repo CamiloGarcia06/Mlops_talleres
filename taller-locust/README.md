@@ -80,6 +80,14 @@ Resultado esperado:
 ```
 ![alt text](image.png)
 
+Imagen en DockerHub:
+
+https://hub.docker.com/r/anthonny19/wine-inference-api
+<img width="1899" height="1053" alt="image" src="https://github.com/user-attachments/assets/555809a4-83d2-4ce3-b0d5-3c84c8a122ba" />
+
+
+
+
 ## Paso 3 — docker-compose.yaml (API de inferencia)
 
 Levanta la API usando la imagen publicada con límites de recursos configurables para el experimento.
