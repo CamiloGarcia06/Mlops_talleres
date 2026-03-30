@@ -5,8 +5,8 @@ version: "3.8"
 services:
   api:
     build:
-      context: /home/anthonny/Documents/Mlops_talleres/api
-      dockerfile: Dockerfile
+     image: anthonny19/wine-inference-api:1.0
+     
     restart: unless-stopped
     environment:
       MLFLOW_TRACKING_URI:    http://mlflow-server:5000
