@@ -1,0 +1,38 @@
+version: "3.8"
+
+
+
+services:
+  api:
+    build:
+      context: /home/anthonny/Documents/Mlops_talleres/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MLFLOW_TRACKING_URI:    http://mlflow-server:5000
+      AWS_ACCESS_KEY_ID:      minioadmin
+      AWS_SECRET_ACCESS_KEY:  minioadmin123
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mlops-net
+
+networks:
+  mlops-net:
+    external: true
+    name: mlops_talleres_mlops-net
