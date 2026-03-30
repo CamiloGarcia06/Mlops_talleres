@@ -47,11 +47,11 @@ Se entrenaron 24 modelos desde JupyterLab (**http://localhost:8889**, token: `ta
 
 Los modelos se registraron en MLflow bajo el nombre `wine-classifier-production`.
 
-![MLflow runs]
 <img width="1920" height="412" alt="image" src="https://github.com/user-attachments/assets/d28cd34e-f60e-48bd-be1a-9e9c8a81da42" />
 
 
-![MLflow models](imagenes/02_mlflow_models.png)
+<img width="1920" height="946" alt="image" src="https://github.com/user-attachments/assets/08c53c0d-dd18-4655-a3c8-5af60aa22026" />
+
 
 ---
 
