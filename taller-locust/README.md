@@ -55,19 +55,30 @@ Los modelos se registraron en MLflow bajo el nombre `wine-classifier-production`
 
 ---
 
-## Paso 2 — Imagen Docker
+## Paso 2 — Imagen Docker publicada en DockerHub
 
-La imagen se construye desde el `Dockerfile` del repo base y se publica en DockerHub:
-
+La imagen está disponible públicamente en DockerHub:
 ```bash
-docker build -t TU_USUARIO/wine-inference-api:1.0 \
-  ~/Documents/Mlops_talleres/api/
-
-docker login
-docker push TU_USUARIO/wine-inference-api:1.0
+docker pull anthonny19/wine-inference-api:1.0
 ```
 
----
+Para verificar que funciona:
+```bash
+docker run --rm \
+  -e MLFLOW_TRACKING_URI=http://mlflow-server:5000 \
+  -e AWS_ACCESS_KEY_ID=minioadmin \
+  -e AWS_SECRET_ACCESS_KEY=minioadmin123 \
+  -e MLFLOW_S3_ENDPOINT_URL=http://minio:9000 \
+  --network mlops_talleres_mlops-net \
+  -p 8003:8000 \
+  anthonny19/wine-inference-api:1.0
+```
+
+Resultado esperado:
+```json
+{"status": "ok", "models_loaded": 24}
+```
+![alt text](image.png)
 
 ## Paso 3 — docker-compose.yaml (API de inferencia)
 
