@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlflow-config
+  namespace: mlops
+data:
+  MLFLOW_TRACKING_URI: http://mlflow-service:5000
+  MLFLOW_S3_ENDPOINT_URL: http://minio-service:9000
+  DEFAULT_ARTIFACT_ROOT: s3://mlflow-artifacts/
+   
