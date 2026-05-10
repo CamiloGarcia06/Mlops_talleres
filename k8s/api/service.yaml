@@ -1,15 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mlflow-service
+  name: api
   namespace: mlops
   labels:
-    app: mlflow
+    app: api
 spec:
   type: ClusterIP
   selector:
-    app: mlflow
+    app: api
   ports:
     - name: http
-      port: 5000
-      targetPort: 5000
+      port: 8000
+      targetPort: 8000

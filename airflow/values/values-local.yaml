@@ -1,8 +1,47 @@
+# Helm values for the official apache-airflow chart.
+# Apply with:
+#   helm repo add apache-airflow https://airflow.apache.org
+#   helm upgrade --install airflow apache-airflow/airflow \
+#     -n mlops -f airflow/values/values-local.yaml
+#
+# Replace <docker-user> in `images.airflow.repository` before installing.
+
 executor: LocalExecutor
+
+# Custom image that includes the pipeline package and DAG.
+images:
+  airflow:
+    repository: <docker-user>/mlops-airflow
+    tag: v0.1.0
+    pullPolicy: IfNotPresent
+
+# Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).
+postgresql:
+  enabled: false
+
+data:
+  metadataConnection:
+    user: mlops_user
+    pass: mlops_pass_2026
+    protocol: postgresql
+    host: postgres-service.mlops.svc.cluster.local
+    port: 5432
+    db: airflow
+    sslmode: disable
+
+# DAGs are baked into the image; disable git-sync.
+dags:
+  gitSync:
+    enabled: false
+  persistence:
+    enabled: false
 
 env:
   - name: AIRFLOW__CORE__LOAD_EXAMPLES
     value: "False"
+  # Default DSN used by pipeline.config (data layer, NOT the metastore).
+  - name: PG_DSN
+    value: "postgresql://mlops_user:mlops_pass_2026@postgres-service.mlops.svc.cluster.local:5432/mlops"
   - name: MLFLOW_TRACKING_URI
     value: "http://mlflow-service.mlops.svc.cluster.local:5000"
   - name: MLFLOW_S3_ENDPOINT_URL
@@ -11,16 +50,40 @@ env:
     value: "minioadmin"
   - name: AWS_SECRET_ACCESS_KEY
     value: "minioadmin123"
+  - name: SOURCE_CSV
+    value: "/opt/airflow/data/Diabetes.csv"
+  - name: BATCH_SIZE
+    value: "15000"
 
 webserver:
   service:
     type: ClusterIP
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+
+scheduler:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+
+triggerer:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
 
 workers:
-  replicas: 0
+  replicas: 0  # LocalExecutor: no separate workers
 
 flower:
   enabled: false
 
-triggerer:
-  enabled: true
+# Mount the project's CSV into the scheduler/webserver pods.
+# Adjust to a PVC or hostPath depending on cluster (microk8s, kind, etc.).
+extraVolumes:
+  - name: data
+    emptyDir: {}
+extraVolumeMounts:
+  - name: data
+    mountPath: /opt/airflow/data

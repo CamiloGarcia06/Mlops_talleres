@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: mlflow
   namespace: mlops
+  labels:
+    app: mlflow
 spec:
   replicas: 1
   selector:
@@ -14,33 +16,42 @@ spec:
         app: mlflow
     spec:
       containers:
-      - name: mlflow
-        image: ghcr.io/mlflow/mlflow:v2.13.0
-        command:
-        - bash
-        - -c
-        - >-
-          pip install --no-cache-dir psycopg2-binary boto3 &&
-          mlflow server
-          --backend-store-uri=postgresql://mlops_user:mlops_pass_2026@postgres-service:5432/mlflow_db
-          --default-artifact-root=s3://mlflow-artifacts/
-          --host=0.0.0.0
-          --port=5000
-        resources:
-          requests:
-            cpu: 200m
-            memory: 512Mi
-          limits:
-            cpu: 500m
-            memory: 1Gi
-        envFrom:
-        - configMapRef:
-            name: mlflow-config
-        - secretRef:
-            name: mlflow-secret
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 30
-          periodSeconds: 10
+        - name: mlflow
+          # Reemplazar <docker-user> por el usuario de DockerHub antes del push.
+          image: <docker-user>/mlops-mlflow:v0.1.0
+          ports:
+            - containerPort: 5000
+              name: http
+          command:
+            - mlflow
+            - server
+            - --backend-store-uri=$(MLFLOW_BACKEND_STORE_URI)
+            - --default-artifact-root=s3://mlflow-artifacts/
+            - --host=0.0.0.0
+            - --port=5000
+          envFrom:
+            - configMapRef:
+                name: mlflow-config
+            - secretRef:
+                name: mlflow-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
