@@ -276,6 +276,60 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 11,
+      "title": "CPU Usage - API Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "custom": { "lineWidth": 2 },
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"mlops\", pod=~\"api-.*\", container=\"api\"}[1m]))",
+          "legendFormat": "CPU usage (cores)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(kube_pod_container_resource_limits{namespace=\"mlops\", pod=~\"api-.*\", container=\"api\", resource=\"cpu\"})",
+          "legendFormat": "CPU limit",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Memory Usage - API Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "lineWidth": 2 },
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"mlops\", pod=~\"api-.*\", container=\"api\"})",
+          "legendFormat": "Memory working set",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(kube_pod_container_resource_limits{namespace=\"mlops\", pod=~\"api-.*\", container=\"api\", resource=\"memory\"})",
+          "legendFormat": "Memory limit",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "10s",

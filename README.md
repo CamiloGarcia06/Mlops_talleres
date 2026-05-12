@@ -69,12 +69,12 @@ Despliega el servidor MLflow con backend PostgreSQL y artifact store MinIO.
 La imagen se construye desde `docker/mlflow/Dockerfile` (base `python:3.11-slim`, incluye `mlflow==2.13.0`, `psycopg2-binary` y `boto3`).
 
 ```bash
-# Reemplazar <docker-user> por tu usuario de DockerHub
-docker build -t <docker-user>/mlops-mlflow:v0.1.0 -f docker/mlflow/Dockerfile docker/mlflow/
-docker push <docker-user>/mlops-mlflow:v0.1.0
+# Reemplazar dandiazc por tu usuario de DockerHub
+docker build -t dandiazc/mlops-mlflow:v0.1.0 -f docker/mlflow/Dockerfile docker/mlflow/
+docker push dandiazc/mlops-mlflow:v0.1.0
 ```
 
-Antes del push, editar `k8s/mlflow/deployment.yaml` y sustituir `<docker-user>` por el usuario real.
+Antes del push, editar `k8s/mlflow/deployment.yaml` y sustituir `dandiazc` por el usuario real.
 
 ### Despliegue
 
@@ -222,11 +222,11 @@ Despliegue de Airflow en Kubernetes (Helm chart oficial, `LocalExecutor`) con me
 
 ```bash
 # Build context = repo root para que pueda copiar pipeline/
-docker build -f airflow/Dockerfile -t <docker-user>/mlops-airflow:v0.1.0 .
-docker push <docker-user>/mlops-airflow:v0.1.0
+docker build -f airflow/Dockerfile -t dandiazc/mlops-airflow:v0.1.0 .
+docker push dandiazc/mlops-airflow:v0.1.0
 ```
 
-Antes del helm install, sustituir `<docker-user>` en `airflow/values/values-local.yaml` (`images.airflow.repository`).
+Antes del helm install, sustituir `dandiazc` en `airflow/values/values-local.yaml` (`images.airflow.repository`).
 
 ### Despliegue
 
@@ -292,9 +292,9 @@ API FastAPI que carga el modelo `champion` desde MLflow, registra cada inferenci
 ### Build & push
 
 ```bash
-docker build -f docker/api/Dockerfile -t <docker-user>/mlops-api:v0.1.0 .
-docker push <docker-user>/mlops-api:v0.1.0
-# editar k8s/api/deployment.yaml -> sustituir <docker-user>
+docker build -f docker/api/Dockerfile -t dandiazc/mlops-api:v0.1.0 .
+docker push dandiazc/mlops-api:v0.1.0
+# editar k8s/api/deployment.yaml -> sustituir dandiazc
 ```
 
 ### Despliegue
@@ -355,8 +355,8 @@ Sin desvíos. Manifiestos alineados con la spec.
 ## Fase 2 — Tracking MLflow (`tracking-mlflow`)
 
 **Imagen propia con placeholder de DockerHub.**
-- En `k8s/mlflow/deployment.yaml` la imagen aparece como `<docker-user>/mlops-mlflow:v0.1.0`.
-- **Acción requerida:** sustituir `<docker-user>` por el usuario real antes de `kubectl apply`.
+- En `k8s/mlflow/deployment.yaml` la imagen aparece como `dandiazc/mlops-mlflow:v0.1.0`.
+- **Acción requerida:** sustituir `dandiazc` por el usuario real antes de `kubectl apply`.
 
 ---
 
@@ -395,7 +395,7 @@ Sin desvíos. Manifiestos alineados con la spec.
 - **Acción opcional:** si quieres credenciales propias, añadir `webserver.defaultUser` en `values-local.yaml` o configurar auth externo.
 
 **Imagen propia con placeholder de DockerHub.**
-- `airflow/values/values-local.yaml` referencia `<docker-user>/mlops-airflow:v0.1.0`.
+- `airflow/values/values-local.yaml` referencia `dandiazc/mlops-airflow:v0.1.0`.
 - **Acción requerida:** sustituir antes de `helm install`.
 
 **Build context obligatorio = repo root.**
@@ -415,7 +415,7 @@ Sin desvíos. Manifiestos alineados con la spec.
 - El loader extrae el sklearn nativo del wrapper `pyfunc` para llamar `predict_proba`. Si el champion fuera un modelo sin probabilidades (regresión, custom flavor), `score` queda `null`.
 - **Acción:** documentar en la sustentación qué modelos del Registry exponen score.
 
-**Placeholder `<docker-user>` en `k8s/api/deployment.yaml`.**
+**Placeholder `dandiazc` en `k8s/api/deployment.yaml`.**
 - **Acción requerida:** sustituir antes de `kubectl apply`.
 
 **Cache TTL = 300s.**
@@ -426,12 +426,12 @@ Sin desvíos. Manifiestos alineados con la spec.
 
 ## Fase 6 — UI Streamlit (`ui-streamlit`)
 
-**Placeholder `<docker-user>` en `k8s/ui/deployment.yaml`.**
-- **Accion requerida:** sustituir `<docker-user>` por el usuario real de DockerHub antes de `kubectl apply`.
+**Placeholder `dandiazc` en `k8s/ui/deployment.yaml`.**
+- **Accion requerida:** sustituir `dandiazc` por el usuario real de DockerHub antes de `kubectl apply`.
 - Luego ejecutar:
   ```bash
-  docker tag mlops-ui:v0.1.0 <docker-user>/mlops-ui:v0.1.0
-  docker push <docker-user>/mlops-ui:v0.1.0
+  docker tag mlops-ui:v0.1.0 dandiazc/mlops-ui:v0.1.0
+  docker push dandiazc/mlops-ui:v0.1.0
   ```
 
 **Imagen construida localmente como `mlops-ui:v0.1.0` (814 MB).**
@@ -459,8 +459,8 @@ Sin desvíos. Manifiestos alineados con la spec.
 
 **Imágenes en DockerHub.**
 - Tres imágenes propias deben publicarse:
-  - `<docker-user>/mlops-mlflow:v0.1.0`
-  - `<docker-user>/mlops-airflow:v0.1.0`
-  - `<docker-user>/mlops-api:v0.1.0`
-  - `<docker-user>/mlops-ui:v0.1.0` (fase 6 - construida localmente, pendiente push)
+  - `dandiazc/mlops-mlflow:v0.1.0`
+  - `dandiazc/mlops-airflow:v0.1.0`
+  - `dandiazc/mlops-api:v0.1.0`
+  - `dandiazc/mlops-ui:v0.1.0` (fase 6 - construida localmente, pendiente push)
 - El enunciado lo exige explícitamente para la entrega final.
