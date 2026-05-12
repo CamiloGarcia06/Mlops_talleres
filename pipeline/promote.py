@@ -35,7 +35,8 @@ def compare(candidate: dict) -> dict:
     settings = load()
     client = _client()
 
-    candidate_metric = float(candidate.get("metric", float("-inf")))
+    raw_metric = candidate.get("metric")
+    candidate_metric = float(raw_metric) if raw_metric is not None else 0.0
 
     try:
         champion_version = client.get_model_version_by_alias(
@@ -45,9 +46,9 @@ def compare(candidate: dict) -> dict:
         champion_v = champion_version.version
     except Exception:
         champion_v = None
-        champion_metric = float("-inf")
+        champion_metric = None
 
-    decision = "promote" if candidate_metric > champion_metric else "keep"
+    decision = "promote" if champion_metric is None or candidate_metric > champion_metric else "keep"
     summary = {
         "candidate_version": candidate.get("version"),
         "candidate_metric": candidate_metric,

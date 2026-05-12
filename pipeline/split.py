@@ -21,15 +21,20 @@ logger = logging.getLogger(__name__)
 
 def run(batch_id: str | None = None) -> dict:
     settings = load()
-    where = "WHERE batch_id = %s" if batch_id else ""
-    params = (batch_id,) if batch_id else ()
 
     with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT id, target FROM clean.diabetes_clean {where}",
-            params,
-        )
-        rows = cur.fetchall()
+        if batch_id:
+            cur.execute(
+                "SELECT id, target FROM clean.diabetes_clean WHERE batch_id = %s",
+                (batch_id,),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                cur.execute("SELECT id, target FROM clean.diabetes_clean")
+                rows = cur.fetchall()
+        else:
+            cur.execute("SELECT id, target FROM clean.diabetes_clean")
+            rows = cur.fetchall()
 
     if not rows:
         raise ValueError(f"no clean rows to split (batch_id={batch_id!r})")

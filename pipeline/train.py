@@ -36,14 +36,26 @@ logger = logging.getLogger(__name__)
 
 
 def _read_clean(batch_id: str | None) -> pd.DataFrame:
-    where = "WHERE batch_id = %s AND split IS NOT NULL" if batch_id else "WHERE split IS NOT NULL"
-    params = (batch_id,) if batch_id else ()
     with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT row_hash, split, features, target FROM clean.diabetes_clean {where}",
-            params,
-        )
-        rows = cur.fetchall()
+        if batch_id:
+            cur.execute(
+                "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
+                "WHERE batch_id = %s AND split IS NOT NULL",
+                (batch_id,),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                cur.execute(
+                    "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
+                    "WHERE split IS NOT NULL"
+                )
+                rows = cur.fetchall()
+        else:
+            cur.execute(
+                "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
+                "WHERE split IS NOT NULL"
+            )
+            rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no clean rows ready for training (batch_id={batch_id!r})")
     return pd.DataFrame(

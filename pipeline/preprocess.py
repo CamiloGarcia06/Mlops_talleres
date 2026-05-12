@@ -114,10 +114,10 @@ def run(batch_id: str | None = None) -> dict:
         "  split = NULL"
     )
     rows = []
-    for row_hash, batch, features, target in zip(
+    for row_hash, raw_batch, features, target in zip(
         df["row_hash"], df["batch_id"], feature_df.to_dict(orient="records"), y
     ):
-        rows.append((row_hash, batch, Json(features), int(target)))
+        rows.append((row_hash, batch_id or raw_batch, Json(features), int(target)))
 
     with connect() as conn, conn.cursor() as cur:
         execute_batch(cur, upsert_sql, rows, page_size=1_000)
