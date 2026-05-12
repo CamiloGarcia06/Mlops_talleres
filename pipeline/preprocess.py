@@ -56,12 +56,20 @@ def _read_batch(batch_id: str | None) -> pd.DataFrame:
                 "WHERE batch_id = %s AND status = 'loaded'",
                 (batch_id,),
             )
+            rows = cur.fetchall()
+            if not rows:
+                # All rows were duplicates from a prior run; process all existing data.
+                cur.execute(
+                    "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
+                    "WHERE status = 'loaded'"
+                )
+                rows = cur.fetchall()
         else:
             cur.execute(
                 "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
                 "WHERE status = 'loaded'"
             )
-        rows = cur.fetchall()
+            rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no raw rows to preprocess (batch_id={batch_id!r})")
     df = pd.DataFrame([{"row_hash": h, "batch_id": b, **p} for h, b, p in rows])
@@ -84,11 +92,15 @@ def run(batch_id: str | None = None) -> dict:
         median = feature_df[c].median()
         feature_df[c] = feature_df[c].fillna(median)
 
-    # one-hot encode categoricals
-    if categorical_cols:
-        feature_df = pd.get_dummies(
-            feature_df, columns=categorical_cols, dummy_na=False
-        )
+    # one-hot encode only low-cardinality categoricals; drop high-cardinality ones
+    # (e.g. ICD diagnosis codes with 700+ unique values blow up memory)
+    LOW_CARD_MAX = 20
+    low_card = [c for c in categorical_cols if feature_df[c].nunique() <= LOW_CARD_MAX]
+    high_card = [c for c in categorical_cols if feature_df[c].nunique() > LOW_CARD_MAX]
+    if high_card:
+        feature_df = feature_df.drop(columns=high_card)
+    if low_card:
+        feature_df = pd.get_dummies(feature_df, columns=low_card, dummy_na=False)
     feature_df = feature_df.astype(float)
 
     upsert_sql = (

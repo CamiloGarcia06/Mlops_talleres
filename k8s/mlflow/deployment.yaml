@@ -17,8 +17,7 @@ spec:
     spec:
       containers:
         - name: mlflow
-          # Reemplazar <docker-user> por el usuario de DockerHub antes del push.
-          image: <docker-user>/mlops-mlflow:v0.1.0
+          image: dandiazc/mlops-mlflow:v0.1.0
           ports:
             - containerPort: 5000
               name: http

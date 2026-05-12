@@ -76,7 +76,8 @@ def load_batch(path: str | None = None, batch_id: str | None = None) -> dict:
             for _, raw_row in chunk.iterrows():
                 row_dict = raw_row.to_dict()
                 rh = _row_hash(row_dict)
-                rows.append((rh, batch_id, source_file, Json(row_dict)))
+                clean = {k: (None if pd.isna(v) else v) for k, v in row_dict.items()}
+                rows.append((rh, batch_id, source_file, Json(clean)))
             before = _count_rows(cur)
             execute_batch(cur, insert_sql, rows, page_size=1_000)
             after = _count_rows(cur)

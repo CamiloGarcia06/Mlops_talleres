@@ -11,8 +11,8 @@ executor: LocalExecutor
 # Custom image that includes the pipeline package and DAG.
 images:
   airflow:
-    repository: <docker-user>/mlops-airflow
-    tag: v0.1.0
+    repository: dandiazc/mlops-airflow
+    tag: v0.6.0
     pullPolicy: IfNotPresent
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).
@@ -20,14 +20,7 @@ postgresql:
   enabled: false
 
 data:
-  metadataConnection:
-    user: mlops_user
-    pass: mlops_pass_2026
-    protocol: postgresql
-    host: postgres-service.mlops.svc.cluster.local
-    port: 5432
-    db: airflow
-    sslmode: disable
+  metadataSecretName: airflow-metadata
 
 # DAGs are baked into the image; disable git-sync.
 dags:
@@ -39,21 +32,21 @@ dags:
 env:
   - name: AIRFLOW__CORE__LOAD_EXAMPLES
     value: "False"
-  # Default DSN used by pipeline.config (data layer, NOT the metastore).
-  - name: PG_DSN
-    value: "postgresql://mlops_user:mlops_pass_2026@postgres-service.mlops.svc.cluster.local:5432/mlops"
+  - name: AIRFLOW__CORE__PARALLELISM
+    value: "1"
   - name: MLFLOW_TRACKING_URI
     value: "http://mlflow-service.mlops.svc.cluster.local:5000"
   - name: MLFLOW_S3_ENDPOINT_URL
     value: "http://minio-service.mlops.svc.cluster.local:9000"
-  - name: AWS_ACCESS_KEY_ID
-    value: "minioadmin"
-  - name: AWS_SECRET_ACCESS_KEY
-    value: "minioadmin123"
   - name: SOURCE_CSV
     value: "/opt/airflow/data/Diabetes.csv"
   - name: BATCH_SIZE
     value: "15000"
+
+# Credentials injected from Kubernetes Secret (not stored in plain text here).
+extraEnvFrom: |
+  - secretRef:
+      name: airflow-env-secret
 
 webserver:
   service:
@@ -65,7 +58,7 @@ webserver:
 scheduler:
   resources:
     requests: { cpu: 250m, memory: 512Mi }
-    limits:   { cpu: "1",  memory: 1Gi }
+    limits:   { cpu: "1",  memory: 3Gi }
 
 triggerer:
   enabled: true
@@ -79,11 +72,4 @@ workers:
 flower:
   enabled: false
 
-# Mount the project's CSV into the scheduler/webserver pods.
-# Adjust to a PVC or hostPath depending on cluster (microk8s, kind, etc.).
-extraVolumes:
-  - name: data
-    emptyDir: {}
-extraVolumeMounts:
-  - name: data
-    mountPath: /opt/airflow/data
+

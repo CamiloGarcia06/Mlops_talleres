@@ -63,7 +63,7 @@ def _candidates(seed: int) -> dict[str, Any]:
     return {
         "logistic_regression": LogisticRegression(max_iter=1000, random_state=seed),
         "random_forest": RandomForestClassifier(
-            n_estimators=200, max_depth=8, random_state=seed, n_jobs=-1
+            n_estimators=200, max_depth=8, random_state=seed, n_jobs=2
         ),
     }
 

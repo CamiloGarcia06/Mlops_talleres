@@ -15,7 +15,17 @@ from pipeline.db.connection import connect
 
 logger = logging.getLogger(__name__)
 
-CRITICAL_KEYS_DEFAULT: tuple[str, ...] = ("Outcome",)
+TARGET_CANDIDATES = ("Outcome", "outcome", "readmitted", "target")
+
+
+def _detect_critical_keys(columns) -> tuple[str, ...]:
+    for c in TARGET_CANDIDATES:
+        if c in columns:
+            return (c,)
+    return ()
+
+
+CRITICAL_KEYS_DEFAULT: tuple[str, ...] = ()
 
 
 def _read_batch(batch_id: str | None) -> pd.DataFrame:
@@ -25,17 +35,24 @@ def _read_batch(batch_id: str | None) -> pd.DataFrame:
                 "SELECT row_hash, payload FROM raw.diabetes_raw WHERE batch_id = %s",
                 (batch_id,),
             )
+            rows = cur.fetchall()
+            if not rows:
+                # All rows were duplicates from a prior run; validate all existing data.
+                cur.execute("SELECT row_hash, payload FROM raw.diabetes_raw")
+                rows = cur.fetchall()
         else:
             cur.execute("SELECT row_hash, payload FROM raw.diabetes_raw")
-        rows = cur.fetchall()
+            rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no raw rows found (batch_id={batch_id!r})")
     df = pd.DataFrame([{"row_hash": h, **p} for h, p in rows])
     return df
 
 
-def run(batch_id: str | None = None, critical_keys: Iterable[str] = CRITICAL_KEYS_DEFAULT) -> dict:
+def run(batch_id: str | None = None, critical_keys: Iterable[str] | None = None) -> dict:
     df = _read_batch(batch_id)
+    if critical_keys is None:
+        critical_keys = _detect_critical_keys(df.columns)
     issues: list[str] = []
 
     # 1. row count
