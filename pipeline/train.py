@@ -73,9 +73,12 @@ def _xy(df: pd.DataFrame, split: str, feature_cols: list[str]):
 
 def _candidates(seed: int) -> dict[str, Any]:
     return {
-        "logistic_regression": LogisticRegression(max_iter=1000, random_state=seed),
+        "logistic_regression": LogisticRegression(
+            max_iter=1000, random_state=seed, class_weight="balanced"
+        ),
         "random_forest": RandomForestClassifier(
-            n_estimators=200, max_depth=8, random_state=seed, n_jobs=2
+            n_estimators=200, max_depth=8, random_state=seed, n_jobs=2,
+            class_weight="balanced",
         ),
     }
 
