@@ -20,14 +20,14 @@ def _base() -> str:
     return os.environ.get("API_URL", _DEFAULT_API_URL).rstrip("/")
 
 
-def get_model_info(timeout: int = 5) -> dict[str, Any]:
+def get_model_info(timeout: int = 30) -> dict[str, Any]:
     """Return the /model-info payload or raise requests.RequestException."""
     resp = requests.get(f"{_base()}/model-info", timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
-def predict(features: dict[str, Any], timeout: int = 10) -> dict[str, Any]:
+def predict(features: dict[str, Any], timeout: int = 30) -> dict[str, Any]:
     """Call POST /predict and return the response dict.
 
     Raises:

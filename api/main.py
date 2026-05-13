@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -24,7 +25,20 @@ logger = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 settings = load()
-app = FastAPI(title="Diabetes Inference API", version="0.1.0")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        lm = get_cache().get()
+        set_model_info(lm.name, lm.version, lm.alias)
+        logger.info("model pre-loaded at startup: %s v%s", lm.name, lm.version)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("startup model pre-load failed (will retry on first request): %s", e)
+    yield
+
+
+app = FastAPI(title="Diabetes Inference API", version="0.1.0", lifespan=lifespan)
 
 Instrumentator(
     excluded_handlers=["/metrics", "/health"],
