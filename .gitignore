@@ -5,3 +5,5 @@ __pycache__/
 airflow/logs/
 data/*.csv
 *.egg-info/
+CLAUDE.md
+.claude/

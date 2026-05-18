@@ -8,11 +8,16 @@
 
 executor: LocalExecutor
 
+# Fixed secret key so JWT tokens stay valid across pod restarts.
+# Without this, Airflow 3.x regenerates the key on every restart and
+# task workers fail with "Invalid auth token: Signature verification failed".
+webserverSecretKey: "mlops2026-stable-secret-key-proyecto2"
+
 # Custom image that includes the pipeline package and DAG.
 images:
   airflow:
     repository: dandiazc/mlops-airflow
-    tag: v1.0.0
+    tag: v1.2.0
     pullPolicy: IfNotPresent
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).
@@ -34,6 +39,10 @@ env:
     value: "False"
   - name: AIRFLOW__CORE__PARALLELISM
     value: "1"
+  - name: AIRFLOW__CORE__HOSTNAME_CALLABLE
+    value: "airflow.utils.net.get_host_ip_address"
+  - name: AIRFLOW__LOGGING__LOG_FETCH_TIMEOUT_SEC
+    value: "30"
   - name: MLFLOW_TRACKING_URI
     value: "http://mlflow-service.mlops.svc.cluster.local:5000"
   - name: MLFLOW_S3_ENDPOINT_URL

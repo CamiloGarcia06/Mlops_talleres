@@ -49,27 +49,14 @@ def _binarize_target(series: pd.Series) -> pd.Series:
 
 
 def _read_batch(batch_id: str | None) -> pd.DataFrame:
+    # Always process ALL accumulated raw data so that pd.get_dummies produces
+    # a consistent feature schema regardless of which batch triggered the run.
     with connect() as conn, conn.cursor() as cur:
-        if batch_id:
-            cur.execute(
-                "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
-                "WHERE batch_id = %s AND status = 'loaded'",
-                (batch_id,),
-            )
-            rows = cur.fetchall()
-            if not rows:
-                # All rows were duplicates from a prior run; process all existing data.
-                cur.execute(
-                    "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
-                    "WHERE status = 'loaded'"
-                )
-                rows = cur.fetchall()
-        else:
-            cur.execute(
-                "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
-                "WHERE status = 'loaded'"
-            )
-            rows = cur.fetchall()
+        cur.execute(
+            "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
+            "WHERE status = 'loaded'"
+        )
+        rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no raw rows to preprocess (batch_id={batch_id!r})")
     df = pd.DataFrame([{"row_hash": h, "batch_id": b, **p} for h, b, p in rows])

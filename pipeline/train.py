@@ -19,6 +19,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
+from mlflow.models.signature import infer_signature
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -36,26 +37,14 @@ logger = logging.getLogger(__name__)
 
 
 def _read_clean(batch_id: str | None) -> pd.DataFrame:
+    # Always train on ALL accumulated clean rows so the feature schema matches
+    # what preprocessing produced from the full accumulated dataset.
     with connect() as conn, conn.cursor() as cur:
-        if batch_id:
-            cur.execute(
-                "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
-                "WHERE batch_id = %s AND split IS NOT NULL",
-                (batch_id,),
-            )
-            rows = cur.fetchall()
-            if not rows:
-                cur.execute(
-                    "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
-                    "WHERE split IS NOT NULL"
-                )
-                rows = cur.fetchall()
-        else:
-            cur.execute(
-                "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
-                "WHERE split IS NOT NULL"
-            )
-            rows = cur.fetchall()
+        cur.execute(
+            "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
+            "WHERE split IS NOT NULL"
+        )
+        rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no clean rows ready for training (batch_id={batch_id!r})")
     return pd.DataFrame(
@@ -119,10 +108,13 @@ def run(batch_id: str | None = None) -> dict:
             mlflow.log_params({"model_type": name, "batch_id": batch_id or "all", "seed": settings.random_seed})
             mlflow.log_metrics(metrics)
 
+            X_train_df = pd.DataFrame(X_train, columns=feature_cols)
+            signature = infer_signature(X_train_df, model.predict(X_train))
             mlflow.sklearn.log_model(
                 sk_model=model,
                 artifact_path="model",
                 registered_model_name=settings.registered_model_name,
+                signature=signature,
             )
 
             # Resolve the registered version we just created (latest for this run)

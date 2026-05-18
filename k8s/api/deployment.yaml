@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: dandiazc/mlops-api:v0.2.0
+          image: dandiazc/mlops-api:v0.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
