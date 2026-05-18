@@ -14,10 +14,14 @@ executor: LocalExecutor
 webserverSecretKey: "mlops2026-stable-secret-key-proyecto2"
 
 # Custom image that includes the pipeline package and DAG.
+# v2.0.3 is skipped — that build had a broken `packaging` pin
+# (`ImportError: cannot import name 'parse' from 'packaging.version'`)
+# which crashed the airflow init container.
+# v2.0.4 adds: RF n_estimators 200->100, numerics cast to float64 in train.
 images:
   airflow:
     repository: dandiazc/mlops-airflow
-    tag: v1.2.0
+    tag: v2.0.4
     pullPolicy: IfNotPresent
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).

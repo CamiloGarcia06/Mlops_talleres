@@ -82,31 +82,14 @@ def reload_model() -> ModelInfo:
     )
 
 
-def _align_features(df: pd.DataFrame, lm: LoadedModel) -> pd.DataFrame:
-    """Reindex df to the feature schema the model was trained on.
-
-    Adds missing columns as 0 and drops unknown ones, so the API works
-    regardless of how many features the current champion was trained with.
-    """
-    try:
-        schema = lm.model.metadata.get_input_schema()
-        expected = [col.name for col in schema.inputs]
-        return df.reindex(columns=expected, fill_value=0.0)
-    except Exception:  # noqa: BLE001
-        pass
-    # Fallback: sklearn stores feature names in feature_names_in_ after fit
-    try:
-        impl = getattr(lm.model, "_model_impl", None)
-        sk = getattr(impl, "sklearn_model", None) if impl is not None else None
-        if sk is not None and hasattr(sk, "feature_names_in_"):
-            return df.reindex(columns=list(sk.feature_names_in_), fill_value=0.0)
-    except Exception:  # noqa: BLE001
-        pass
-    return df
-
-
 def _predict_with_model(lm: LoadedModel, features: dict) -> tuple[int, float | None]:
-    df = _align_features(pd.DataFrame([features]), lm)
+    """Run the MLflow pyfunc model on a single feature dict.
+
+    The model is a sklearn Pipeline that bundles its own OneHotEncoder, so
+    the API just passes raw features through. New categorical values are
+    handled by `handle_unknown="ignore"` in the encoder.
+    """
+    df = pd.DataFrame([features])
     with INFERENCE_LATENCY_SECONDS.time():
         raw = lm.model.predict(df)
     pred = int(raw[0]) if hasattr(raw, "__len__") else int(raw)

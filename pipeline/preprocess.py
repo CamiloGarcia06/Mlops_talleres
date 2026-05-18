@@ -1,11 +1,16 @@
 """Preprocess raw rows into clean.diabetes_clean.
 
-Transformations (kept generic so they tolerate either Pima or 130-US schemas):
-  - target column auto-detected (`Outcome` or `readmitted`).
-  - non-numeric columns are one-hot encoded.
-  - missing numeric values are imputed with the column median.
-  - the resulting feature row is stored as JSONB so the API can rebuild the
-    feature vector without depending on a fixed column list at the DB level.
+The output keeps categorical columns as **strings** (not one-hot). One-hot
+encoding now lives inside the sklearn Pipeline at training time, so the
+encoder is versioned together with the model and the API receives raw
+inputs instead of a 141-column pre-encoded payload.
+
+Transformations applied here:
+  - target column auto-detected (`Outcome` or `readmitted`) and binarized.
+  - numeric columns are imputed with the column median.
+  - categorical columns with >20 unique values are dropped (e.g. ICD codes
+    with 700+ distinct values would blow up the OneHotEncoder fitted later).
+  - features are stored as JSONB so the schema can evolve without DDL.
 
 Re-running on the same batch is idempotent: rows are upserted by `row_hash`.
 """
@@ -24,6 +29,7 @@ from pipeline.db.connection import connect
 logger = logging.getLogger(__name__)
 
 TARGET_CANDIDATES = ("Outcome", "outcome", "readmitted", "target")
+LOW_CARD_MAX = 20
 
 
 def _detect_target(columns: Iterable[str]) -> str:
@@ -39,18 +45,18 @@ def _binarize_target(series: pd.Series) -> pd.Series:
         return series.astype(int).clip(0, 1)
     if series.dtype.kind == "f":
         return (series.fillna(0).astype(int) > 0).astype(int)
-    # categorical — treat the most frequent class as the negative
+    # categorical — readmitted within 30 days = positive class
     mapping = {v: 0 for v in series.unique()}
     if "<30" in mapping:
-        mapping["<30"] = 1  # readmitted within 30 days = positive
+        mapping["<30"] = 1
     elif "YES" in mapping:
         mapping["YES"] = 1
     return series.map(mapping).fillna(0).astype(int)
 
 
 def _read_batch(batch_id: str | None) -> pd.DataFrame:
-    # Always process ALL accumulated raw data so that pd.get_dummies produces
-    # a consistent feature schema regardless of which batch triggered the run.
+    # Always process ALL accumulated raw data so feature schema is consistent
+    # across runs.
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT row_hash, batch_id, payload FROM raw.diabetes_raw "
@@ -59,8 +65,7 @@ def _read_batch(batch_id: str | None) -> pd.DataFrame:
         rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no raw rows to preprocess (batch_id={batch_id!r})")
-    df = pd.DataFrame([{"row_hash": h, "batch_id": b, **p} for h, b, p in rows])
-    return df
+    return pd.DataFrame([{"row_hash": h, "batch_id": b, **p} for h, b, p in rows])
 
 
 def run(batch_id: str | None = None) -> dict:
@@ -79,16 +84,15 @@ def run(batch_id: str | None = None) -> dict:
         median = feature_df[c].median()
         feature_df[c] = feature_df[c].fillna(median)
 
-    # one-hot encode only low-cardinality categoricals; drop high-cardinality ones
-    # (e.g. ICD diagnosis codes with 700+ unique values blow up memory)
-    LOW_CARD_MAX = 20
-    low_card = [c for c in categorical_cols if feature_df[c].nunique() <= LOW_CARD_MAX]
+    # drop high-cardinality categoricals (e.g. ICD diag codes with 700+ values)
     high_card = [c for c in categorical_cols if feature_df[c].nunique() > LOW_CARD_MAX]
     if high_card:
         feature_df = feature_df.drop(columns=high_card)
-    if low_card:
-        feature_df = pd.get_dummies(feature_df, columns=low_card, dummy_na=False)
-    feature_df = feature_df.astype(float)
+        categorical_cols = [c for c in categorical_cols if c not in high_card]
+
+    # cast categoricals to plain strings so JSONB stays JSON-serialisable
+    for c in categorical_cols:
+        feature_df[c] = feature_df[c].astype(str)
 
     upsert_sql = (
         "INSERT INTO clean.diabetes_clean (row_hash, batch_id, features, target) "
@@ -113,6 +117,8 @@ def run(batch_id: str | None = None) -> dict:
         "batch_id": batch_id,
         "rows": len(rows),
         "feature_count": len(feature_df.columns),
+        "numeric_count": len(numeric_cols),
+        "categorical_count": len(categorical_cols),
         "target_col": target_col,
     }
     logger.info("preprocess done: %s", summary)
