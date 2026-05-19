@@ -11,4 +11,4 @@ USER airflow
 RUN pip install --no-cache-dir -r /requirements.txt
 
 COPY airflow/dags/ /opt/airflow/dags/
-COPY data/data/Diabetes.csv /opt/airflow/data/Diabetes.csv
+COPY data/Diabetes.csv /opt/airflow/data/Diabetes.csv

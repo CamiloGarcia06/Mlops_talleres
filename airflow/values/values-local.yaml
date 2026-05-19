@@ -21,7 +21,7 @@ webserverSecretKey: "mlops2026-stable-secret-key-proyecto2"
 images:
   airflow:
     repository: dandiazc/mlops-airflow
-    tag: v2.0.4
+    tag: v1.0.0
     pullPolicy: IfNotPresent
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).

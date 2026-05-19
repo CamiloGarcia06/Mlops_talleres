@@ -9,7 +9,6 @@ k8s/
 observability/
 loadtest/
 scripts/
-docker/
 airflow/values/
 airflow/Dockerfile
 .gitignore
