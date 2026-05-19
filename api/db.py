@@ -1,8 +1,13 @@
-"""Inference logger.
+"""Logger de inferencias hacia inference.predictions.
 
-Writes every prediction to `inference.predictions`. The table is created by
-`pipeline/db/migrations.py` (phase 3). Failures here are logged but never
-break the response to the client (degraded mode).
+Cada llamada a /predict inserta una fila aquí para habilitar
+reentrenamiento, monitoreo de deriva y auditoría. La tabla se crea en
+`pipeline/db/migrations.py`.
+
+Política de errores: si el INSERT falla (Postgres caído, transacción
+abortada, etc.) se loguea el error pero **NO** se interrumpe la
+respuesta al cliente. Servir una predicción siempre es prioritario
+sobre dejarla registrada.
 """
 
 from __future__ import annotations
@@ -18,6 +23,8 @@ from api.config import load
 
 logger = logging.getLogger(__name__)
 
+# Sentencia INSERT plantilla. Los placeholders coinciden con el orden
+# de argumentos de log_inference().
 INSERT_SQL = """
 INSERT INTO inference.predictions
     (request_id, input_payload, prediction, score, model_name, model_version, latency_ms)
@@ -34,7 +41,16 @@ def log_inference(
     model_version: str,
     latency_ms: float,
 ) -> None:
+    """Inserta una fila en inference.predictions.
+
+    Cualquier excepción se captura y se loguea como warning. La función
+    nunca relanza para que la API responda al cliente aunque la BD esté
+    momentáneamente fuera de servicio (modo degradado).
+    """
     try:
+        # Abrimos una conexión por inserción. Es simple y suficiente
+        # dado el volumen esperado; si la carga aumenta se puede
+        # cambiar por un pool sin afectar el contrato.
         with psycopg2.connect(load().pg_dsn) as conn, conn.cursor() as cur:
             cur.execute(
                 INSERT_SQL,
@@ -49,4 +65,4 @@ def log_inference(
                 ),
             )
     except Exception as e:  # noqa: BLE001
-        logger.warning("failed to log inference %s: %s", request_id, e)
+        logger.warning("no se pudo registrar la inferencia %s: %s", request_id, e)

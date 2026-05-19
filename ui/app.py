@@ -1,7 +1,7 @@
-"""Streamlit inference UI for the Diabetes MLOps project.
+"""UI de inferencia Streamlit para el proyecto MLOps de diabetes.
 
-The UI communicates exclusively with the FastAPI inference service.
-It does NOT import mlflow, psycopg2 or any database driver.
+La UI se comunica exclusivamente con el servicio de inferencia FastAPI.
+NO importa mlflow, psycopg2 ni ningún driver de base de datos.
 """
 
 from __future__ import annotations
@@ -12,81 +12,85 @@ import client
 from examples import PIMA_SAMPLE_PAYLOAD, SAMPLE_PAYLOAD
 
 # ---------------------------------------------------------------------------
-# All 141 one-hot features with sensible defaults (alphabetical = training order)
+# Defaults de columnas crudas — las mismas ~40 columnas que el Pipeline
+# de sklearn del modelo espera. Las categóricas son strings planos; las
+# numéricas son floats. El OneHotEncoder del modelo tiene
+# handle_unknown="ignore", por lo que cualquier valor no visto será
+# descartado silenciosamente sin fallar.
 # ---------------------------------------------------------------------------
-_MODEL_BASE: dict = {
-    "A1Cresult_>7": 0.0, "A1Cresult_>8": 0.0, "A1Cresult_Norm": 0.0,
-    "acarbose_Down": 0.0, "acarbose_No": 1.0, "acarbose_Steady": 0.0, "acarbose_Up": 0.0,
-    "acetohexamide_No": 1.0, "acetohexamide_Steady": 0.0,
-    "admission_source_id": 7.0, "admission_type_id": 1.0,
-    "age_[0-10)": 0.0, "age_[10-20)": 0.0, "age_[20-30)": 0.0, "age_[30-40)": 0.0,
-    "age_[40-50)": 0.0, "age_[50-60)": 0.0, "age_[60-70)": 1.0, "age_[70-80)": 0.0,
-    "age_[80-90)": 0.0, "age_[90-100)": 0.0,
-    "change_Ch": 0.0, "change_No": 1.0,
-    "chlorpropamide_Down": 0.0, "chlorpropamide_No": 1.0,
-    "chlorpropamide_Steady": 0.0, "chlorpropamide_Up": 0.0,
-    "citoglipton_No": 1.0,
-    "diabetesMed_No": 0.0, "diabetesMed_Yes": 1.0,
-    "discharge_disposition_id": 1.0,
+_RAW_DEFAULTS: dict = {
+    # Numerics
     "encounter_id": 2278392.0,
-    "examide_No": 1.0,
-    "gender_Female": 1.0, "gender_Male": 0.0, "gender_Unknown/Invalid": 0.0,
-    "glimepiride_Down": 0.0, "glimepiride_No": 1.0,
-    "glimepiride-pioglitazone_No": 1.0, "glimepiride-pioglitazone_Steady": 0.0,
-    "glimepiride_Steady": 0.0, "glimepiride_Up": 0.0,
-    "glipizide_Down": 0.0, "glipizide-metformin_No": 1.0, "glipizide-metformin_Steady": 0.0,
-    "glipizide_No": 1.0, "glipizide_Steady": 0.0, "glipizide_Up": 0.0,
-    "glyburide_Down": 0.0, "glyburide-metformin_Down": 0.0, "glyburide-metformin_No": 1.0,
-    "glyburide-metformin_Steady": 0.0, "glyburide-metformin_Up": 0.0,
-    "glyburide_No": 1.0, "glyburide_Steady": 0.0, "glyburide_Up": 0.0,
-    "insulin_Down": 0.0, "insulin_No": 0.0, "insulin_Steady": 1.0, "insulin_Up": 0.0,
-    "max_glu_serum_>200": 0.0, "max_glu_serum_>300": 0.0, "max_glu_serum_Norm": 0.0,
-    "metformin_Down": 0.0, "metformin_No": 0.0,
-    "metformin-pioglitazone_No": 1.0, "metformin-pioglitazone_Steady": 0.0,
-    "metformin-rosiglitazone_No": 1.0, "metformin-rosiglitazone_Steady": 0.0,
-    "metformin_Steady": 1.0, "metformin_Up": 0.0,
-    "miglitol_Down": 0.0, "miglitol_No": 1.0, "miglitol_Steady": 0.0, "miglitol_Up": 0.0,
-    "nateglinide_Down": 0.0, "nateglinide_No": 1.0,
-    "nateglinide_Steady": 0.0, "nateglinide_Up": 0.0,
-    "number_diagnoses": 9.0, "number_emergency": 0.0,
-    "number_inpatient": 0.0, "number_outpatient": 0.0,
-    "num_lab_procedures": 41.0, "num_medications": 11.0, "num_procedures": 0.0,
     "patient_nbr": 8222157.0,
-    "payer_code_?": 0.0, "payer_code_BC": 0.0, "payer_code_CH": 0.0, "payer_code_CM": 0.0,
-    "payer_code_CP": 0.0, "payer_code_DM": 0.0, "payer_code_FR": 0.0, "payer_code_HM": 0.0,
-    "payer_code_MC": 1.0, "payer_code_MD": 0.0, "payer_code_MP": 0.0, "payer_code_OG": 0.0,
-    "payer_code_OT": 0.0, "payer_code_PO": 0.0, "payer_code_SI": 0.0, "payer_code_SP": 0.0,
-    "payer_code_UN": 0.0, "payer_code_WC": 0.0,
-    "pioglitazone_Down": 0.0, "pioglitazone_No": 1.0,
-    "pioglitazone_Steady": 0.0, "pioglitazone_Up": 0.0,
-    "race_?": 0.0, "race_AfricanAmerican": 0.0, "race_Asian": 0.0,
-    "race_Caucasian": 1.0, "race_Hispanic": 0.0, "race_Other": 0.0,
-    "repaglinide_Down": 0.0, "repaglinide_No": 1.0,
-    "repaglinide_Steady": 0.0, "repaglinide_Up": 0.0,
-    "rosiglitazone_Down": 0.0, "rosiglitazone_No": 1.0,
-    "rosiglitazone_Steady": 0.0, "rosiglitazone_Up": 0.0,
+    "admission_type_id": 1.0,
+    "discharge_disposition_id": 1.0,
+    "admission_source_id": 7.0,
     "time_in_hospital": 3.0,
-    "tolazamide_No": 1.0, "tolazamide_Steady": 0.0, "tolazamide_Up": 0.0,
-    "tolbutamide_No": 1.0, "tolbutamide_Steady": 0.0,
-    "troglitazone_No": 1.0, "troglitazone_Steady": 0.0,
-    "weight_?": 1.0, "weight_[0-25)": 0.0, "weight_[100-125)": 0.0,
-    "weight_[125-150)": 0.0, "weight_[150-175)": 0.0, "weight_[175-200)": 0.0,
-    "weight_>200": 0.0, "weight_[25-50)": 0.0, "weight_[50-75)": 0.0, "weight_[75-100)": 0.0,
+    "num_lab_procedures": 41.0,
+    "num_procedures": 0.0,
+    "num_medications": 11.0,
+    "number_outpatient": 0.0,
+    "number_emergency": 0.0,
+    "number_inpatient": 0.0,
+    "number_diagnoses": 9.0,
+    # Categóricas — defaults coinciden con el valor más frecuente en el dataset
+    "race": "Caucasian",
+    "gender": "Female",
+    "age": "[60-70)",
+    "weight": "?",
+    "payer_code": "MC",
+    "max_glu_serum": "None",
+    "A1Cresult": "None",
+    "metformin": "Steady",
+    "repaglinide": "No",
+    "nateglinide": "No",
+    "chlorpropamide": "No",
+    "glimepiride": "No",
+    "acetohexamide": "No",
+    "glipizide": "No",
+    "glyburide": "No",
+    "tolbutamide": "No",
+    "pioglitazone": "No",
+    "rosiglitazone": "No",
+    "acarbose": "No",
+    "miglitol": "No",
+    "troglitazone": "No",
+    "tolazamide": "No",
+    "examide": "No",
+    "citoglipton": "No",
+    "insulin": "Steady",
+    "glyburide-metformin": "No",
+    "glipizide-metformin": "No",
+    "glimepiride-pioglitazone": "No",
+    "metformin-rosiglitazone": "No",
+    "metformin-pioglitazone": "No",
+    "change": "No",
+    "diabetesMed": "Yes",
 }
 
 _AGE_BUCKETS = [
-    (0,  10, "age_[0-10)"),  (10, 20, "age_[10-20)"), (20, 30, "age_[20-30)"),
-    (30, 40, "age_[30-40)"), (40, 50, "age_[40-50)"), (50, 60, "age_[50-60)"),
-    (60, 70, "age_[60-70)"), (70, 80, "age_[70-80)"), (80, 90, "age_[80-90)"),
-    (90, 200, "age_[90-100)"),
+    (0,  10, "[0-10)"),  (10, 20, "[10-20)"), (20, 30, "[20-30)"),
+    (30, 40, "[30-40)"), (40, 50, "[40-50)"), (50, 60, "[50-60)"),
+    (60, 70, "[60-70)"), (70, 80, "[70-80)"), (80, 90, "[80-90)"),
+    (90, 200, "[90-100)"),
 ]
+
+_GENDER_MAP = {0: "Female", 1: "Male", 2: "Unknown/Invalid"}
+_CHANGE_MAP = {0: "No", 1: "Ch"}
+_DIABETES_MED_MAP = {0: "No", 1: "Yes"}
+_GLU_MAP = {0: "None", 1: ">200", 2: ">300", 3: "Norm"}
+_A1C_MAP = {0: "None", 1: ">7", 2: ">8", 3: "Norm"}
 
 
 def _to_model_features(form: dict) -> dict:
-    """Convert simplified form values to the full 141-feature one-hot payload."""
-    payload = dict(_MODEL_BASE)
+    """Superpone valores del formulario sobre el dict de defaults crudos.
 
-    # Direct numeric features
+    El modelo es un Pipeline de sklearn que hace su propio encoding one-hot,
+    así que solo necesitamos enviar strings categóricos crudos + numéricos crudos.
+    """
+    payload = dict(_RAW_DEFAULTS)
+
+    # Direct numeric overrides
     for key in (
         "admission_type_id", "discharge_disposition_id", "admission_source_id",
         "time_in_hospital", "num_lab_procedures", "num_procedures",
@@ -96,44 +100,25 @@ def _to_model_features(form: dict) -> dict:
         if key in form:
             payload[key] = float(form[key])
 
-    # age → bucket one-hot
+    # edad (entero) → string de rango
     age = int(form.get("age", 60))
-    for lo, hi, col in _AGE_BUCKETS:
-        payload[col] = 1.0 if lo <= age < hi else 0.0
+    for lo, hi, bucket in _AGE_BUCKETS:
+        if lo <= age < hi:
+            payload["age"] = bucket
+            break
 
-    # gender one-hot  (0=Female, 1=Male, 2=Unknown)
-    g = int(form.get("gender", 1))
-    payload["gender_Female"]          = 1.0 if g == 0 else 0.0
-    payload["gender_Male"]            = 1.0 if g == 1 else 0.0
-    payload["gender_Unknown/Invalid"] = 1.0 if g == 2 else 0.0
-
-    # change one-hot  (0=No, 1=Ch)
-    ch = int(form.get("change", 0))
-    payload["change_No"] = 1.0 if ch == 0 else 0.0
-    payload["change_Ch"] = 1.0 if ch == 1 else 0.0
-
-    # diabetesMed one-hot  (0=No, 1=Yes)
-    dm = int(form.get("diabetes_med", 1))
-    payload["diabetesMed_No"]  = 1.0 if dm == 0 else 0.0
-    payload["diabetesMed_Yes"] = 1.0 if dm == 1 else 0.0
-
-    # max_glu_serum one-hot  (0=None, 1=>200, 2=>300, 3=Norm)
-    mg = int(form.get("max_glu_serum", 0))
-    payload["max_glu_serum_>200"] = 1.0 if mg == 1 else 0.0
-    payload["max_glu_serum_>300"] = 1.0 if mg == 2 else 0.0
-    payload["max_glu_serum_Norm"] = 1.0 if mg == 3 else 0.0
-
-    # A1Cresult one-hot  (0=None, 1=>7, 2=>8, 3=Norm)
-    a1c = int(form.get("a1c_result", 0))
-    payload["A1Cresult_>7"]  = 1.0 if a1c == 1 else 0.0
-    payload["A1Cresult_>8"]  = 1.0 if a1c == 2 else 0.0
-    payload["A1Cresult_Norm"] = 1.0 if a1c == 3 else 0.0
+    # Categóricas mediante tabla de mapeo
+    payload["gender"] = _GENDER_MAP.get(int(form.get("gender", 1)), "Female")
+    payload["change"] = _CHANGE_MAP.get(int(form.get("change", 0)), "No")
+    payload["diabetesMed"] = _DIABETES_MED_MAP.get(int(form.get("diabetes_med", 1)), "Yes")
+    payload["max_glu_serum"] = _GLU_MAP.get(int(form.get("max_glu_serum", 0)), "None")
+    payload["A1Cresult"] = _A1C_MAP.get(int(form.get("a1c_result", 0)), "None")
 
     return payload
 
 
 # ---------------------------------------------------------------------------
-# Page config
+# Configuración de página
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Diabetes Predictor",
@@ -142,7 +127,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Sidebar: model info
+# Barra lateral: información del modelo
 # ---------------------------------------------------------------------------
 st.sidebar.title("Diabetes Predictor")
 st.sidebar.markdown("---")
@@ -160,7 +145,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption("UI conectada a la API FastAPI via variable de entorno API_URL.")
 
 # ---------------------------------------------------------------------------
-# Session-state initialisation
+# Inicialización del estado de sesión
 # ---------------------------------------------------------------------------
 _DEFAULT_VALUES: dict = {
     "age": 50,
@@ -187,7 +172,7 @@ for k, v in _DEFAULT_VALUES.items():
         st.session_state[k] = v
 
 # ---------------------------------------------------------------------------
-# Header
+# Encabezado
 # ---------------------------------------------------------------------------
 st.title("Prediccion de Reingreso Hospitalario")
 st.markdown(
@@ -196,7 +181,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Example loader buttons
+# Botones para cargar ejemplos
 # ---------------------------------------------------------------------------
 col_ex1, col_ex2, _ = st.columns([1, 1, 4])
 
@@ -213,7 +198,7 @@ with col_ex2:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Input form
+# Formulario de entrada
 # ---------------------------------------------------------------------------
 st.subheader("Datos del paciente")
 
@@ -223,7 +208,7 @@ _using_pima = any(k in st.session_state for k in _pima_keys)
 
 with st.form("predict_form"):
     if _using_pima:
-        # ---- Pima layout ----
+        # ---- Diseño Pima ----
         c1, c2, c3, c4 = st.columns(4)
         pregnancies = c1.number_input(
             "Pregnancies", min_value=0, max_value=20,
@@ -273,7 +258,7 @@ with st.form("predict_form"):
         use_conversion = False
 
     else:
-        # ---- Diabetes 130-US layout ----
+        # ---- Diseño Diabetes 130-US ----
         c1, c2, c3 = st.columns(3)
 
         age = c1.number_input(
@@ -384,7 +369,7 @@ with st.form("predict_form"):
     submitted = st.form_submit_button("Predecir", type="primary")
 
 # ---------------------------------------------------------------------------
-# Prediction result
+# Resultado de la predicción
 # ---------------------------------------------------------------------------
 if submitted:
     api_payload = _to_model_features(features_payload) if use_conversion else features_payload

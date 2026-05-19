@@ -1,15 +1,15 @@
-"""Predefined example payloads for the inference form.
+"""Payloads de ejemplo predefinidos para el formulario de inferencia.
 
-These match the feature set produced by pipeline/preprocess.py for the
-Diabetes 130-US hospitals dataset (numerical / encoded columns).
-The payload covers the most discriminant features used by the trained model;
-any extra feature the model expects will fall back to the model's own
-imputer / default handling.
+Estos coinciden con el conjunto de features producido por pipeline/preprocess.py
+para el dataset de hospitales Diabetes 130-US (columnas numéricas / codificadas).
+El payload cubre los features más discriminantes usados por el modelo entrenado;
+cualquier feature adicional que espere el modelo se comportará según su propio
+imputador / manejo de defaults.
 """
 
 from __future__ import annotations
 
-# Typical readmitted patient profile
+# Perfil típico de paciente reingresado
 SAMPLE_PAYLOAD: dict = {
     "age": 65,
     "time_in_hospital": 5,
@@ -30,8 +30,8 @@ SAMPLE_PAYLOAD: dict = {
     "admission_source_id": 7,
 }
 
-# Minimal Pima-style payload (8 features) — used as fallback if the model was
-# trained on the Pima dataset instead.
+# Payload minimalista estilo Pima (8 features) — usado como fallback si el
+# modelo fue entrenado con el dataset Pima en su lugar.
 PIMA_SAMPLE_PAYLOAD: dict = {
     "Pregnancies": 6,
     "Glucose": 148,

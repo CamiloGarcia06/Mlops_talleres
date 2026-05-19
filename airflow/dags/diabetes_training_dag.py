@@ -1,14 +1,15 @@
-"""Diabetes MLOps training DAG.
+"""DAG de entrenamiento MLOps de Diabetes.
 
-Each task is a thin wrapper around a function from the project's `pipeline`
-package. The wrappers exist only to:
-  - propagate `batch_id` between tasks via XCom
-  - keep the DAG file declarative
+Cada tarea es un envoltorio delgado alrededor de una función del paquete
+`pipeline` del proyecto. Los envoltorios existen solo para:
+  - propagar `batch_id` entre tareas vía XCom
+  - mantener el archivo DAG declarativo
 
-If a task fails, downstream tasks don't run (default `all_success` rule),
-the error is visible in the Airflow UI, and the DAG can be rerun safely
-because every step is idempotent (`row_hash` UNIQUE in raw, upserts in
-clean, MLflow runs are append-only).
+Si una tarea falla, las tareas descendentes no se ejecutan (regla por
+defecto `all_success`), el error es visible en la UI de Airflow, y el DAG
+puede ser reejecutado de forma segura porque cada paso es idempotente
+(`row_hash` UNIQUE en raw, upserts en clean, los runs de MLflow son
+append-only).
 """
 
 from __future__ import annotations
@@ -65,16 +66,16 @@ def diabetes_mlops_pipeline():
         return split.run(batch_id=load_summary["batch_id"])
 
     @task()
-    def t_train(load_summary: dict) -> dict:
-        return train.run(batch_id=load_summary["batch_id"])
+    def t_train_lr(load_summary: dict) -> dict:
+        return train.run(batch_id=load_summary["batch_id"], model="lr")
 
     @task()
-    def t_compare(candidate: dict) -> dict:
-        return promote.compare(candidate)
+    def t_train_rf(load_summary: dict) -> dict:
+        return train.run(batch_id=load_summary["batch_id"], model="rf")
 
     @task()
-    def t_promote(candidate: dict) -> dict:
-        return promote.promote(candidate)
+    def t_promote_best(candidate_lr: dict, candidate_rf: dict) -> dict:
+        return promote.promote_best([candidate_lr, candidate_rf])
 
     migrate = t_migrate()
     src = t_check_source()
@@ -82,11 +83,11 @@ def diabetes_mlops_pipeline():
     qual = t_quality(loaded)
     prep = t_preprocess(loaded)
     sp = t_split(loaded)
-    candidate = t_train(loaded)
-    comparison = t_compare(candidate)
-    promotion = t_promote(candidate)
+    lr = t_train_lr(loaded)
+    rf = t_train_rf(loaded)
+    promotion = t_promote_best(lr, rf)
 
-    migrate >> src >> loaded >> qual >> prep >> sp >> candidate >> comparison >> promotion
+    migrate >> src >> loaded >> qual >> prep >> sp >> [lr, rf] >> promotion
 
 
 diabetes_mlops_pipeline()

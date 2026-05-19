@@ -11,7 +11,8 @@ $forwards = @(
     @{ svc = "svc/ui";                 local = 8501; remote = 8501; label = "Streamlit UI" },
     @{ svc = "svc/prometheus";         local = 9090; remote = 9090; label = "Prometheus" },
     @{ svc = "svc/grafana";            local = 3000; remote = 3000; label = "Grafana" },
-    @{ svc = "svc/locust-master";      local = 8089; remote = 8089; label = "Locust" }
+    @{ svc = "svc/locust-master";      local = 8089; remote = 8089; label = "Locust" },
+    @{ svc = "svc/postgres-service";   local = 5432; remote = 5432; label = "PostgreSQL" }
 )
 
 Write-Host "`nStarting port-forwards..." -ForegroundColor Cyan
@@ -38,6 +39,7 @@ Write-Host "  UI         http://localhost:8501"
 Write-Host "  Prometheus http://localhost:9090"
 Write-Host "  Grafana    http://localhost:3000  (admin / mlops2026)"
 Write-Host "  Locust     http://localhost:8089"
+Write-Host "  PostgreSQL localhost:5432            (mlops_user / mlops_pass_2026 / db=mlops)"
 
 # Keep script alive so jobs don't get orphaned when the terminal closes
 try { Wait-Job -Job (Get-Job) | Out-Null }
