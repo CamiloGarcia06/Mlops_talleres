@@ -1,14 +1,15 @@
-"""Diabetes MLOps training DAG.
+"""DAG de entrenamiento MLOps de Diabetes.
 
-Each task is a thin wrapper around a function from the project's `pipeline`
-package. The wrappers exist only to:
-  - propagate `batch_id` between tasks via XCom
-  - keep the DAG file declarative
+Cada tarea es un envoltorio delgado alrededor de una función del paquete
+`pipeline` del proyecto. Los envoltorios existen solo para:
+  - propagar `batch_id` entre tareas vía XCom
+  - mantener el archivo DAG declarativo
 
-If a task fails, downstream tasks don't run (default `all_success` rule),
-the error is visible in the Airflow UI, and the DAG can be rerun safely
-because every step is idempotent (`row_hash` UNIQUE in raw, upserts in
-clean, MLflow runs are append-only).
+Si una tarea falla, las tareas descendentes no se ejecutan (regla por
+defecto `all_success`), el error es visible en la UI de Airflow, y el DAG
+puede ser reejecutado de forma segura porque cada paso es idempotente
+(`row_hash` UNIQUE en raw, upserts en clean, los runs de MLflow son
+append-only).
 """
 
 from __future__ import annotations
