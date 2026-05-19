@@ -32,9 +32,17 @@ def _parser() -> argparse.ArgumentParser:
     p_ing.add_argument("--source")
     p_ing.add_argument("--batch-id", dest="batch_id")
 
-    for name in ("quality", "preprocess", "split", "train"):
+    for name in ("quality", "preprocess", "split"):
         sp = sub.add_parser(name)
         sp.add_argument("--batch-id", dest="batch_id")
+
+    p_train = sub.add_parser("train", help="train one or all candidates")
+    p_train.add_argument("--batch-id", dest="batch_id")
+    p_train.add_argument(
+        "--model",
+        choices=["lr", "rf", "logistic_regression", "random_forest"],
+        help="train only this candidate (default: train both)",
+    )
 
     sub.add_parser("promote", help="(needs a candidate; use `all` instead)")
 
@@ -75,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "train":
-        _print(train.run(batch_id=args.batch_id))
+        _print(train.run(batch_id=args.batch_id, model=getattr(args, "model", None)))
         return 0
 
     if args.command == "promote":

@@ -89,19 +89,27 @@ def _build_pipeline(estimator: Any, numeric_cols: list[str], categorical_cols: l
     ])
 
 
+_MODEL_ALIASES = {
+    "lr": "logistic_regression",
+    "logistic_regression": "logistic_regression",
+    "rf": "random_forest",
+    "random_forest": "random_forest",
+}
+
+
 def _candidates(seed: int) -> dict[str, Any]:
     return {
         "logistic_regression": LogisticRegression(
             max_iter=1000, random_state=seed, class_weight="balanced",
         ),
         "random_forest": RandomForestClassifier(
-            n_estimators=100, max_depth=8, random_state=seed, n_jobs=2,
+            n_estimators=50, max_depth=6, random_state=seed, n_jobs=-1,
             class_weight="balanced",
         ),
     }
 
 
-def run(batch_id: str | None = None) -> dict:
+def run(batch_id: str | None = None, model: str | None = None) -> dict:
     settings = load()
     export_aws_env(settings)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -129,7 +137,16 @@ def run(batch_id: str | None = None) -> dict:
 
     best = {"run_id": None, "version": None, "metric": -1.0, "model_name": None}
 
-    for name, estimator in _candidates(settings.random_seed).items():
+    all_candidates = _candidates(settings.random_seed)
+    if model is None:
+        selected = all_candidates
+    else:
+        key = _MODEL_ALIASES.get(model)
+        if key is None:
+            raise ValueError(f"unknown model {model!r}; expected one of {sorted(_MODEL_ALIASES)}")
+        selected = {key: all_candidates[key]}
+
+    for name, estimator in selected.items():
         with mlflow.start_run(run_name=f"{name}-{batch_id or 'all'}") as run_:
             pipeline = _build_pipeline(estimator, numeric_cols, categorical_cols)
             pipeline.fit(X_train, y_train)
