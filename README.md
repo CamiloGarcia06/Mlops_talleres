@@ -19,6 +19,7 @@ El sistema cubre el ciclo completo: ingesta incremental por lotes → almacenami
 - [Variables de configuración](#variables-de-configuración)
 - [Operación local](#operación-local)
 - [Decisiones técnicas](#decisiones-técnicas)
+- [Dificultades encontradas](#dificultades-encontradas)
 - [Solución de problemas](#solución-de-problemas)
 
 ## Arquitectura
@@ -568,38 +569,89 @@ curl -X DELETE http://localhost:5000/api/2.0/mlflow/registered-models/delete \
 
 ### Métrica principal: F1
 
-Dataset clínicamente desbalanceado (~11% positivos en 130-US). **Accuracy es engañosa**: un modelo que prediga siempre 0 sacaría 89% accuracy con valor clínico nulo. Reportamos accuracy, precision, recall, F1 y ROC-AUC en cada run, pero la **promoción automática usa F1** ([pipeline/train.py](pipeline/train.py) + [pipeline/promote.py](pipeline/promote.py)), que balancea precision y recall sobre la clase positiva — falsos negativos (pacientes en riesgo no detectados) son costosos clínicamente.
+Dataset clínicamente desbalanceado (~11% positivos en 130-US). Un modelo que prediga siempre 0 sacaría ~89% accuracy con valor clínico nulo — no detectaría ningún reingreso, que es justamente lo que queremos identificar. Reportamos accuracy, precision, recall, F1 y ROC-AUC en cada run, pero la **promoción usa F1** porque balancea precision y recall sobre la clase positiva, castigando tanto falsos positivos como falsos negativos (estos últimos clínicamente más costosos).
+
+Detalle de implementación: en lugar de hardcodear `f1` en el comparador, [`train.py`](pipeline/train.py) loguea el valor de la métrica elegida con el alias genérico `primary_metric` y [`promote.py`](pipeline/promote.py) compara por ese alias. Cambiar a otra métrica (`PRIMARY_METRIC=roc_auc`) no requiere editar código, solo el env var.
 
 ### `class_weight=balanced` en ambos modelos
 
-Sin esto, tanto LR como RF colapsan a predecir mayoritariamente 0 dada la imbalance. Con `balanced`, sklearn pesa inversamente a la frecuencia de cada clase durante el entrenamiento.
+Sin balance, tanto LR como RF descubren rápido que la mejor estrategia es **predecir siempre 0**: 89% accuracy a costa de recall ≈ 0. Con `class_weight="balanced"`, sklearn pondera la pérdida inversamente a la frecuencia de cada clase (la positiva pesa ~9× más), forzando al modelo a tomar en cuenta la clase minoritaria.
+
+Elegimos esto sobre SMOTE/oversampling por dos razones: (1) `balanced` se aplica como peso durante el fit, sin alterar la distribución de `clean.diabetes_clean` (preservamos trazabilidad fila-a-fila); (2) SMOTE sintetiza filas que no existen, lo cual complica el debugging clínico de predicciones individuales.
+
+### Split estratificado y reproducible
+
+Dos `train_test_split` consecutivos con `stratify=y` y la misma `random_state=RANDOM_SEED` ([`pipeline/split.py`](pipeline/split.py)) mantienen la proporción de ~11% de positivos en `train` (70%), `val` (15%) y `test` (15%). Sin estratificar, con clases tan desbalanceadas, val/test pueden quedar con casi cero positivos por azar y la F1 se vuelve ruidosa entre runs.
+
+Cada run del DAG **reasigna toda la columna `split`**, no solo las filas nuevas. Importante porque cada batch agrega filas a `clean`, y si solo asignáramos las nuevas manteniendo las viejas, terminaríamos con un sesgo por orden de llegada (filas del primer batch sobre-representadas en train). Reasignar todo garantiza estratificación sobre la población actual y, con la misma semilla, dos runs idénticos producen el mismo split exacto.
+
+### Promoción automática con gate de no degradación
+
+[`promote.py`](pipeline/promote.py) **nunca degrada** el modelo en producción:
+
+```python
+decision = "promote" if champion_metric is None or candidate_metric > champion_metric else "keep"
+```
+
+Dos escenarios cubiertos por la misma rama: en el primer despliegue no hay champion → `champion_metric=None` → el candidato se promueve automáticamente; en despliegues posteriores solo se promueve si supera **estrictamente** al champion actual (`>`, no `≥`). En empate gana el modelo ya desplegado — preferimos estabilidad sobre cambios sin valor demostrable.
+
+Detalle defensivo: `_metric()` usa `metrics.get("primary_metric", float("-inf"))`. Una run con métricas faltantes (OOM mid-fit, error humano editando `train.py`) queda automáticamente al fondo del ranking en lugar de tumbar la cadena con `TypeError`. El sistema queda **anti-frágil**: pierde precisión ante datos parciales pero nunca falla con excepción, lo cual importa cuando el DAG corre de noche sin alguien mirando.
+
+### `train.run()` polimórfico para paralelización
+
+Una sola función entrena uno o todos los candidatos según el argumento:
+
+```python
+def run(batch_id=None, model: str | None = None):
+    if model is None: selected = all_candidates              # ambos (backward-compat)
+    else:             selected = {_MODEL_ALIASES[model]: ...} # solo LR o solo RF
+```
+
+Esto cumple tres requisitos sin duplicar código: (1) **backward-compat** (`train.run()` sigue entrenando ambos como antes); (2) habilita el patrón "dos tareas `t_train_lr` y `t_train_rf` paralelas → un `t_promote_best`" en el DAG, bajando el tiempo total de `LR + RF` a `max(LR, RF)` (~3-4 min en lugar de ~8); (3) `--model lr` en la CLI para debug aislado. Sin esta API polimórfica habría tocado duplicar módulos o magia con `partial`/`lambda` que dificulta testing.
+
+### Log del modelo a MLflow: sin `input_example` y con `pip_requirements` explícito
+
+Dos decisiones tomadas tras debug doloroso en el cluster ([`train.py:172-183`](pipeline/train.py#L172-L183)):
+
+1. **NO pasar `input_example`** a `mlflow.sklearn.log_model`. Cuando se pasa, MLflow recarga el modelo recién guardado desde el artefacto para validar que el ejemplo produce predicción consistente. Ese roundtrip serialización → deserialización funciona con holgura de memoria pero **cuelga indefinidamente** bajo presión (pod con 1-2 GiB durante el train).
+2. **`pip_requirements` explícito** (`["mlflow", "scikit-learn", "pandas", "numpy"]`). Por defecto MLflow ejecuta `infer_pip_requirements` que hace **HTTP requests a PyPI** para resolver versiones exactas. Si el cluster tiene egress restringido o proxy mal configurado, esos requests cuelgan sin mensaje de error claro.
+
+Patrón general: MLflow tiene varias capas "inteligentes" (validación con ejemplos, autodetección de deps, wrapping automático) que asumen entorno cómodo y rompen en cluster real. Vale la pena bypasearlas con configuración explícita en producción.
+
+### Ingesta incremental e idempotente
+
+El enunciado pide carga en lotes de **máximo 15k**. La implementación ([`pipeline/ingest.py`](pipeline/ingest.py)) combina dos mecanismos:
+
+1. **Cursor por offset**: cuenta filas existentes en `raw.diabetes_raw` con el `source_file` actual y usa ese número como `skiprows` en `pd.read_csv(skiprows=offset+1, nrows=chunk_size)`. Cada DAG run procesa los siguientes 15k; tras ~7 runs el CSV se agota y `load_batch` reporta `inserted=0` sin fallar — el DAG sigue corriendo sobre el acumulado.
+2. **Hash determinista como PK**: cada fila se identifica con `SHA-256` sobre su contenido canonicalizado (`sorted(items)`, `NaN→""`). Es `PRIMARY KEY` en `raw.diabetes_raw` con `ON CONFLICT (row_hash) DO NOTHING`.
+
+La canonización importa: sin `sorted()`, el orden inestable de keys en el dict de pandas produciría hashes distintos para la misma fila; sin `NaN→""`, dos NaNs en posiciones idénticas generarían hashes distintos porque `NaN != NaN`. Con ambos en su sitio, cualquier reintento de Airflow (timeout transitorio, catch-up del scheduler) queda como no-op trivial.
 
 ### Features como JSONB en lugar de columnas tipadas
 
-`pd.get_dummies` produce un número variable de columnas según los valores categóricos presentes en el batch. Tres opciones tenía:
+`pd.get_dummies` y la lista de categóricas observadas producen un número variable de columnas según los valores presentes en el batch. Tres opciones consideradas:
 
 1. **Schema rígido con N columnas** → rompe cada vez que aparece una categoría nueva.
 2. **Columna `features TEXT` con CSV serializado** → no consultable.
 3. **JSONB con `features` como objeto** ← elegida. Consultable con `jsonb_object_keys`, sin DDL, tolerante a drift.
 
-### Alineación dinámica de features en la API
-
-Implementada en `_align_features()` ([api/main.py:85](api/main.py#L85)). El problema: el modelo en producción puede haber sido entrenado con N features, pero la UI envía siempre 141. Solución:
-
-1. MLflow guarda el `signature` (lista de columnas + tipos) con cada modelo ([pipeline/train.py:111-117](pipeline/train.py#L111-L117)).
-2. La API extrae ese signature al cargar el modelo.
-3. Al recibir features de la UI, `df.reindex(columns=expected, fill_value=0.0)` rellena con 0 lo faltante y descarta lo desconocido.
-4. Fallback: si no hay signature, usa `sklearn.feature_names_in_`.
-
-Esto desacopla el contrato UI ↔ modelo, permitiendo iterar sobre el modelo sin tocar la UI.
-
-### Cursor de batches por offset
-
-El enunciado pide carga incremental en lotes de **máximo 15k**. La implementación ([pipeline/ingest.py:load_batch](pipeline/ingest.py)) cuenta cuántas filas existen en `raw.diabetes_raw` para el `source_file` actual y usa ese número como `skiprows` en `pd.read_csv`. Cada DAG run procesa los siguientes 15k. Tras ~7 runs el CSV se agota y `load_batch` reporta `inserted=0` sin error — el DAG sigue corriendo (preprocess + train) sobre el acumulado.
-
 ### Filtro de alta cardinalidad en preprocess
 
-`diag_1/2/3` del dataset 130-US tienen >700 valores únicos (ICD codes), lo que produciría miles de columnas one-hot. El preprocess descarta categóricas con >20 valores únicos ([pipeline/preprocess.py:84-86](pipeline/preprocess.py#L84-L86)) para mantener bounded el espacio de features.
+`diag_1/2/3` del dataset 130-US tienen >700 valores únicos (ICD codes), lo que produciría miles de columnas one-hot post-fit. El preprocess descarta categóricas con `>20` valores únicos ([`pipeline/preprocess.py:87-90`](pipeline/preprocess.py#L87-L90)) para mantener acotado el espacio de features. Trade-off: perdemos la señal de los diagnósticos detallados, pero el modelo queda manejable en memoria y tiempo de entrenamiento.
+
+### Índices explícitos en queries hot
+
+[`migrations.py`](pipeline/db/migrations.py) declara índices secundarios sobre las columnas que el pipeline filtra con frecuencia:
+
+```sql
+CREATE INDEX IF NOT EXISTS ix_raw_batch   ON raw.diabetes_raw    (batch_id);
+CREATE INDEX IF NOT EXISTS ix_clean_batch ON clean.diabetes_clean (batch_id);
+CREATE INDEX IF NOT EXISTS ix_clean_split ON clean.diabetes_clean (split);
+```
+
+`ix_raw_batch` acelera el filtro `WHERE batch_id = %s` de `quality.run()`; `ix_clean_split` acelera la lectura de los subsets de train/val/test en `train.py`. Declararlos en `migrations.py` (no via psql manual) garantiza reproducibilidad: quien clone el repo obtiene el mismo schema con `make up`, y `IF NOT EXISTS` los hace seguros de re-ejecutar.
+
+Sin estos índices, a partir de ~50k filas en `clean` cada query del DAG empezaría a tomar segundos en lugar de milisegundos, y eso se acumula en cada tarea.
 
 ### Imagen Airflow propia (no sidecar / git-sync)
 
@@ -608,6 +660,122 @@ Embebemos `pipeline/`, los DAGs y el CSV en la imagen ([airflow/Dockerfile](airf
 ### `webserverSecretKey` fijo en Airflow
 
 Por defecto Airflow 3.x regenera el JWT secret en cada restart del webserver, lo que invalida los tokens de los task workers y falla los DAGs. Fijamos uno en [airflow/values/values-local.yaml:14](airflow/values/values-local.yaml#L14).
+
+## Dificultades encontradas
+
+Las cuatro dificultades más relevantes durante el desarrollo, qué impacto tuvieron y cómo se resolvieron.
+
+### 1. Categorías nuevas entre batches rompían el esquema
+
+**Problema.** El dataset se ingiere en lotes incrementales de 15k filas (no todo de una vez). Detectamos que el **primer batch** podía contener ~100 valores únicos en una variable categórica (por ejemplo `diag_1`, `payer_code`, `medical_specialty`), pero el **segundo batch** introducía valores categóricos **nunca vistos antes**. Esto rompía cualquier intento de fijar un esquema de features estático: el `OneHotEncoder` entrenado en el primer batch desconocía las categorías nuevas y fallaba en runtime, o peor, las ignoraba silenciosamente produciendo predicciones sesgadas.
+
+**Impacto.** Cada vez que el DAG procesaba un batch nuevo y volvía a entrenar, había riesgo de:
+- Fallar el entrenamiento (`ValueError: Found unknown categories`).
+- Romper la API si el encoder se serializaba por separado del modelo (el `predict` recibía un shape distinto al esperado).
+- Tener que rehacer el esquema manualmente, perdiendo idempotencia.
+
+**Solución.** Adoptamos el **Patrón 1**: serializar el `OneHotEncoder` **dentro** del mismo `sklearn.Pipeline` que el clasificador, configurado con `handle_unknown="ignore"`:
+
+```python
+Pipeline([
+    ColumnTransformer([
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols),
+        ("num", "passthrough", numeric_cols),
+    ]),
+    Classifier(...),
+])
+```
+
+Así el encoder y el modelo se publican como **una única unidad** en MLflow (un solo `mlflow.sklearn.log_model`). En inferencia, cualquier categoría desconocida produce un vector de ceros en su columna en vez de romper el pipeline. Se aceptó una pequeña pérdida de información (las categorías nuevas no aportan al score) a cambio de **robustez ante drift de categorías sin reentrenamiento manual**. Ver [`pipeline/train.py`](pipeline/train.py) (función `_build_pipeline`).
+
+### 2. `batch_id` perdido entre tareas del DAG (XCom)
+
+**Problema.** El DAG procesa un batch nuevo en cada run (`ingest → quality → preprocess → split → train`). El `batch_id` lo genera la tarea `t_load_batch` al insertar en `raw.diabetes_raw`, pero las tareas siguientes (`quality`, `preprocess`, `split`, `train`) lo necesitan para filtrar **solo las filas de ese batch** y no reprocesar todo el histórico cada vez. Sin propagarlo correctamente, cada run reprocesaba 100% del acumulado, generando entrenamientos duplicados, runs de MLflow inflados y violaciones de `row_hash UNIQUE` en upserts a `clean.diabetes_clean`.
+
+**Impacto.**
+- Entrenamientos cada vez más lentos (cada run re-procesaba todo lo previo).
+- Métricas de MLflow inconsistentes entre runs (la población cambiaba sin control).
+- Riesgo de duplicados en `clean.diabetes_clean` cuando dos runs procesaban la misma fila.
+
+**Solución.** Cada tarea devuelve un `dict` con el `batch_id` y las downstream lo reciben como input vía **XCom** (mecanismo nativo de Airflow para pasar datos entre tareas):
+
+```python
+@task() def t_load_batch(_src): return ingest.load_batch()           # {"batch_id": "...", ...}
+@task() def t_quality(load_summary):     return quality.run(batch_id=load_summary["batch_id"])
+@task() def t_preprocess(load_summary):  return preprocess.run(batch_id=load_summary["batch_id"])
+...
+```
+
+El grafo declarativo (`migrate >> src >> loaded >> qual >> prep >> sp >> [lr, rf] >> promotion`) deja explícita la dependencia y Airflow inyecta el XCom automáticamente. Combinado con `row_hash UNIQUE` en la capa `raw` y upserts idempotentes en `clean`, el DAG quedó **rerun-safe**: si una tarea falla a mitad y se reintenta, no duplica ni corrompe nada.
+
+### 3. Entrenamientos demasiado lentos (>30 min por iteración)
+
+**Problema.** Los primeros entrenamientos llegaron a tardar **más de 30 minutos por intento**, lo cual mataba la iteración (cada cambio de hiperparámetro requería esperar media hora para validar). Identificamos tres causas concurrentes:
+
+1. El scheduler de Airflow tenía `limits.cpu: 1` y `memory: 3Gi`, y como usamos `LocalExecutor` las tareas corren **dentro del pod del scheduler**, con esos límites.
+2. El `RandomForest` estaba configurado con `n_estimators=100, max_depth=8, n_jobs=2` — costoso para un dataset de ~100k filas × ~140 features post-OneHot.
+3. Los dos candidatos (`LogisticRegression` y `RandomForest`) corrían **en serie** en una sola tarea `train`, sumando sus tiempos.
+
+**Impacto.** Imposible iterar en tiempo razonable durante el desarrollo. Cada smoke-test del pipeline costaba ~30 min, frenando el debugging de los otros componentes (API, UI, observabilidad) que dependen del champion.
+
+**Solución.** Tres cambios combinados:
+
+1. **Subir los `limits` del scheduler** a `cpu: 12, memory: 6Gi` (ajustado al límite de 16 GiB / 20 CPUs de Docker Desktop local) — ver [`airflow/values/values-local.yaml`](airflow/values/values-local.yaml).
+2. **Reducir el `RandomForest`** a `n_estimators=50, max_depth=6, n_jobs=-1`. La pérdida de F1 fue marginal (<1 pp) pero el tiempo de fit cayó a la mitad.
+3. **Paralelizar los dos candidatos** en el DAG: `t_train_lr` y `t_train_rf` corren en simultáneo después de `t_split`, y una nueva tarea `t_promote_best` recibe ambos resultados vía XCom y promueve el mejor por F1. Con `AIRFLOW__CORE__PARALLELISM=8` Airflow ejecuta ambas tareas concurrentemente.
+
+Resultado: el tiempo total de entrenamiento bajó de **~30 min a ~3–4 min** (≈ max(LR, RF) en vez de LR + RF), permitiendo iterar con normalidad.
+
+### 4. Clase objetivo desbalanceada (~11% positivos)
+
+**Problema.** En el dataset Diabetes 130-US la variable objetivo `readmitted` (binarizada a "readmitido en <30 días" vs el resto) tiene solo **~11% de positivos**. Sin ajustes:
+
+- Los modelos colapsaban a predecir siempre la clase mayoritaria.
+- La **accuracy salía engañosamente alta** (~89%) sin valor clínico: el modelo nunca detectaba reingresos, que son justamente los casos que queremos identificar.
+- La selección automática de champion basada en accuracy promovería modelos inútiles.
+
+**Impacto.** Si elegíamos modelos por accuracy, el sistema en producción habría tenido recall ≈ 0 en la clase positiva: cero detección de pacientes en riesgo, lo cual contradice el objetivo clínico (un falso negativo —un reingreso no detectado— es más costoso que un falso positivo).
+
+**Solución.** Dos cambios alineados con la naturaleza del problema:
+
+1. **`class_weight="balanced"`** en ambos clasificadores. Sklearn pondera el costo de los errores inversamente a la frecuencia de cada clase durante el entrenamiento, forzando al modelo a "preocuparse" por la clase minoritaria.
+2. **F1 como métrica primaria de promoción** (no accuracy). F1 = media armónica de precision y recall sobre la clase positiva, balanceando ambos errores. Configurada vía `PRIMARY_METRIC=f1` (env var), leída por `pipeline/promote.py`. Reportamos también accuracy, precision, recall y ROC-AUC para diagnóstico, pero el **`champion` se elige por F1**.
+
+Ver [`pipeline/train.py`](pipeline/train.py) y [`pipeline/promote.py`](pipeline/promote.py).
+
+### 5. Despliegue en una máquina nueva fallaba por restricción de Kustomize
+
+**Problema.** Al intentar levantar el cluster en un equipo distinto al de desarrollo (`kubectl apply -k k8s/foundations`), el despliegue fallaba inmediatamente con:
+
+```
+error: accumulating resources: accumulation err='accumulating resources from
+'../namespace.yaml': security; file '.../k8s/namespace.yaml' is not in or
+below '.../k8s/foundations''
+```
+
+El `kustomization.yaml` original de `foundations/` referenciaba archivos sueltos con rutas relativas hacia arriba (`../namespace.yaml`, `../postgres/secret.yaml`, `../minio/pvc.yaml`, etc.). Funcionaba en la máquina original — donde el desarrollador lo probó — pero Kustomize por defecto activa la restricción de seguridad `LoadRestrictionsRootOnly`, que prohíbe referenciar archivos **fuera del directorio raíz** del `kustomization.yaml`. En máquinas con versiones más estrictas de `kubectl`/`kustomize`, eso bloqueaba el `make up` desde el primer comando, antes incluso de crear el namespace.
+
+**Impacto.** Bloqueador total para reproducir el proyecto: el profesor o cualquier evaluador que clone el repo no podía pasar del primer `kubectl apply -k`. Workarounds existían (`--load-restrictor=LoadRestrictionsNone`), pero exigían que **el usuario recordara un flag específico cada vez**, contradiciendo el requisito de "instrucciones claras de despliegue" del rubro.
+
+**Solución.** Refactor estructural a **bases por carpeta** (patrón idiomático de Kustomize):
+
+1. `k8s/namespace.yaml` se movió a `k8s/namespace/namespace.yaml` con su propio `kustomization.yaml`.
+2. `k8s/postgres/` y `k8s/minio/` recibieron cada uno un `kustomization.yaml` listando los archivos de **su propia** carpeta.
+3. `k8s/foundations/kustomization.yaml` quedó reducido a tres referencias a **carpetas** (no archivos sueltos):
+
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   namespace: mlops
+   resources:
+     - ../namespace
+     - ../postgres
+     - ../minio
+   ```
+
+Cuando Kustomize ve **carpetas** como recursos, las trata como **bases** independientes con su propio root: la restricción de "fuera del directorio raíz" no aplica porque cada base se evalúa por separado. Verificamos que `kubectl kustomize k8s/foundations` produce **exactamente la misma salida** que antes (diff vacío) — refactor sin cambio funcional pero portable a cualquier máquina sin flags adicionales.
+
+Lección: **probar el despliegue en una máquina limpia** desde temprano evita que diferencias de versión o configuración local enmascaren un bug de portabilidad.
 
 ## Solución de problemas
 

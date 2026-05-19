@@ -106,6 +106,14 @@ def _build_pipeline(estimator: Any, numeric_cols: list[str], categorical_cols: l
     ])
 
 
+_MODEL_ALIASES = {
+    "lr": "logistic_regression",
+    "logistic_regression": "logistic_regression",
+    "rf": "random_forest",
+    "random_forest": "random_forest",
+}
+
+
 def _candidates(seed: int) -> dict[str, Any]:
     """Define los modelos candidatos a entrenar.
 
@@ -117,22 +125,31 @@ def _candidates(seed: int) -> dict[str, Any]:
             max_iter=1000, random_state=seed, class_weight="balanced",
         ),
         "random_forest": RandomForestClassifier(
-            n_estimators=100, max_depth=8, random_state=seed, n_jobs=2,
+            n_estimators=50, max_depth=6, random_state=seed, n_jobs=-1,
             class_weight="balanced",
         ),
     }
 
 
-def run(batch_id: str | None = None) -> dict:
-    """Entrena todos los candidatos, los registra en MLflow y devuelve el mejor.
+def run(batch_id: str | None = None, model: str | None = None) -> dict:
+    """Entrena uno o varios candidatos, los registra en MLflow y devuelve el mejor.
+
+    Args:
+        batch_id: id del lote que se está procesando (solo informativo, se
+            usa en el `run_name` de MLflow).
+        model: nombre del candidato a entrenar (`"lr"`, `"rf"`, o sus
+            aliases largos). Si es `None` (default) entrena ambos. Este
+            argumento habilita el patrón de DAG con `t_train_lr` y
+            `t_train_rf` en paralelo.
 
     Pasos:
       1. Configura MLflow (tracking URI + experimento).
       2. Lee los datos limpios + splits desde Postgres.
-      3. Para cada candidato: arma el pipeline, lo entrena, calcula
+      3. Selecciona qué candidatos entrenar según el arg `model`.
+      4. Para cada candidato: arma el pipeline, lo entrena, calcula
          métricas en val/test, loguea params/metrics/artifacts/modelo
          en MLflow y registra una nueva versión en el Model Registry.
-      4. Retorna el dict del candidato ganador según `primary_metric`.
+      5. Retorna el dict del candidato ganador según `primary_metric`.
     """
     settings = load()
     export_aws_env(settings)
@@ -163,7 +180,20 @@ def run(batch_id: str | None = None) -> dict:
     # candidato supera el primary_metric registrado.
     best = {"run_id": None, "version": None, "metric": -1.0, "model_name": None}
 
-    for name, estimator in _candidates(settings.random_seed).items():
+    # Resolvemos qué candidatos entrenar. Si `model` es None entrenamos
+    # todos; si viene un alias específico filtramos a ese único candidato.
+    all_candidates = _candidates(settings.random_seed)
+    if model is None:
+        selected = all_candidates
+    else:
+        key = _MODEL_ALIASES.get(model)
+        if key is None:
+            raise ValueError(
+                f"modelo desconocido {model!r}; opciones válidas: {sorted(_MODEL_ALIASES)}"
+            )
+        selected = {key: all_candidates[key]}
+
+    for name, estimator in selected.items():
         # Abrimos un run nuevo de MLflow por cada candidato.
         with mlflow.start_run(run_name=f"{name}-{batch_id or 'all'}") as run_:
             pipeline = _build_pipeline(estimator, numeric_cols, categorical_cols)

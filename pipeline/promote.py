@@ -73,6 +73,32 @@ def compare(candidate: dict) -> dict:
     return summary
 
 
+def _best(candidates: list[dict]) -> dict:
+    valid = [c for c in candidates if c and c.get("version") is not None]
+    if not valid:
+        raise ValueError("no valid candidates to promote (all missing 'version')")
+    return max(valid, key=lambda c: float(c.get("metric") or float("-inf")))
+
+
+def promote_best(candidates: list[dict]) -> dict:
+    """Pick the best candidate by `metric` and promote it via `promote()`.
+
+    Used by the Airflow DAG when several `train_*` tasks run in parallel and
+    feed their results into a single promotion step. The winner is the one
+    with the highest `primary_metric` (F1 by default).
+    """
+    winner = _best(candidates)
+    logger.info(
+        "selected best candidate: run_id=%s version=%s metric=%.4f (out of %d)",
+        winner.get("run_id"), winner.get("version"), winner.get("metric"), len(candidates),
+    )
+    result = promote(winner)
+    result["selected_run_id"] = winner.get("run_id")
+    result["selected_version"] = winner.get("version")
+    result["candidates_considered"] = len(candidates)
+    return result
+
+
 def promote(candidate: dict) -> dict:
     """Aplica la decisión de `compare()`: si gana el candidato, mueve el alias champion."""
     settings = load()

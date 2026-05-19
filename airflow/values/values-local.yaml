@@ -42,7 +42,9 @@ env:
   - name: AIRFLOW__CORE__LOAD_EXAMPLES
     value: "False"
   - name: AIRFLOW__CORE__PARALLELISM
-    value: "1"
+    value: "8"
+  - name: AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG
+    value: "8"
   - name: AIRFLOW__CORE__HOSTNAME_CALLABLE
     value: "airflow.utils.net.get_host_ip_address"
   - name: AIRFLOW__LOGGING__LOG_FETCH_TIMEOUT_SEC
@@ -70,8 +72,8 @@ webserver:
 
 scheduler:
   resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits:   { cpu: "1",  memory: 3Gi }
+    requests: { cpu: "1",  memory: 1Gi }
+    limits:   { cpu: "12", memory: 6Gi }
 
 triggerer:
   enabled: true

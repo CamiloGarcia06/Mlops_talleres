@@ -10,7 +10,7 @@ Uso:
     python -m pipeline.cli quality [--batch-id ID]
     python -m pipeline.cli preprocess [--batch-id ID]
     python -m pipeline.cli split [--batch-id ID]
-    python -m pipeline.cli train [--batch-id ID]
+    python -m pipeline.cli train [--batch-id ID] [--model {lr|rf}]
     python -m pipeline.cli promote
     python -m pipeline.cli all [--source PATH] [--batch-id ID]
 """
@@ -40,9 +40,21 @@ def _parser() -> argparse.ArgumentParser:
     p_ing.add_argument("--batch-id", dest="batch_id")
 
     # Subcomandos que solo aceptan un batch-id opcional.
-    for name in ("quality", "preprocess", "split", "train"):
+    for name in ("quality", "preprocess", "split"):
         sp = sub.add_parser(name)
         sp.add_argument("--batch-id", dest="batch_id")
+
+    # train acepta además `--model` para entrenar un único candidato.
+    # Sin la opción se entrenan ambos (backward-compat); con `--model lr`
+    # o `--model rf` se entrena solo uno — útil para paralelizar como
+    # `t_train_lr` y `t_train_rf` desde Airflow.
+    p_train = sub.add_parser("train", help="entrena uno o todos los candidatos")
+    p_train.add_argument("--batch-id", dest="batch_id")
+    p_train.add_argument(
+        "--model",
+        choices=["lr", "rf", "logistic_regression", "random_forest"],
+        help="entrena solo este candidato (default: ambos)",
+    )
 
     sub.add_parser("promote", help="(requiere un candidato; usar `all` en su lugar)")
 
@@ -87,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "train":
-        _print(train.run(batch_id=args.batch_id))
+        _print(train.run(batch_id=args.batch_id, model=getattr(args, "model", None)))
         return 0
 
     if args.command == "promote":

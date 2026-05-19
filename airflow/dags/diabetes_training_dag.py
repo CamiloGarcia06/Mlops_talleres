@@ -66,16 +66,16 @@ def diabetes_mlops_pipeline():
         return split.run(batch_id=load_summary["batch_id"])
 
     @task()
-    def t_train(load_summary: dict) -> dict:
-        return train.run(batch_id=load_summary["batch_id"])
+    def t_train_lr(load_summary: dict) -> dict:
+        return train.run(batch_id=load_summary["batch_id"], model="lr")
 
     @task()
-    def t_compare(candidate: dict) -> dict:
-        return promote.compare(candidate)
+    def t_train_rf(load_summary: dict) -> dict:
+        return train.run(batch_id=load_summary["batch_id"], model="rf")
 
     @task()
-    def t_promote(candidate: dict) -> dict:
-        return promote.promote(candidate)
+    def t_promote_best(candidate_lr: dict, candidate_rf: dict) -> dict:
+        return promote.promote_best([candidate_lr, candidate_rf])
 
     migrate = t_migrate()
     src = t_check_source()
@@ -83,11 +83,11 @@ def diabetes_mlops_pipeline():
     qual = t_quality(loaded)
     prep = t_preprocess(loaded)
     sp = t_split(loaded)
-    candidate = t_train(loaded)
-    comparison = t_compare(candidate)
-    promotion = t_promote(candidate)
+    lr = t_train_lr(loaded)
+    rf = t_train_rf(loaded)
+    promotion = t_promote_best(lr, rf)
 
-    migrate >> src >> loaded >> qual >> prep >> sp >> candidate >> comparison >> promotion
+    migrate >> src >> loaded >> qual >> prep >> sp >> [lr, rf] >> promotion
 
 
 diabetes_mlops_pipeline()
