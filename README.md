@@ -9,7 +9,8 @@ El sistema cubre el ciclo completo: ingesta incremental por lotes → almacenami
 - [Arquitectura](#arquitectura)
 - [Componentes](#componentes)
 - [Stack técnico](#stack-técnico)
-- [Quickstart desde cero](#quickstart-desde-cero) — guía completa para alguien que no es el desarrollador
+- [Quickstart con Makefile](#quickstart-con-makefile) — un solo comando (Linux/macOS/WSL)
+- [Quickstart desde cero](#quickstart-desde-cero) — guía completa paso a paso
 - [Flujo del DAG](#flujo-del-dag)
 - [API de inferencia](#api-de-inferencia)
 - [Modelo de datos](#modelo-de-datos)
@@ -68,8 +69,8 @@ flowchart LR
 | BD relacional | PostgreSQL 16 | `postgres:16-alpine` (oficial) | Schemas `raw`, `clean`, `inference` + DB `mlflow`, `airflow` |
 | Artifact store | MinIO | `quay.io/minio/minio` (oficial) | Bucket `mlflow-artifacts` |
 | Registro ML | MLflow 2.13.0 | `dandiazc/mlops-mlflow:v0.1.0` | Backend PG + artifacts S3-compatible |
-| API inferencia | FastAPI + uvicorn | `dandiazc/mlops-api:v0.3.0` | `/health /predict /model-info /metrics /reload-model` |
-| UI | Streamlit | `dandiazc/mlops-ui:v0.1.0` | Formulario clínico → POST `/predict` |
+| API inferencia | FastAPI + uvicorn | `dandiazc/mlops-api:v0.4.0` | `/health /predict /model-info /metrics /reload-model` |
+| UI | Streamlit | `dandiazc/mlops-ui:v0.4.0` | Formulario clínico → POST `/predict` |
 | Pruebas de carga | Locust (master+workers) | `locustio/locust` (oficial) | Escenario contra `/predict` |
 | Métricas | Prometheus | `prom/prometheus` (oficial) | Scrape vía anotaciones del pod |
 | Dashboards | Grafana | `grafana/grafana` (oficial) | 1 dashboard con latencias p50/p95/p99 + CPU/mem |
@@ -85,6 +86,44 @@ flowchart LR
 | Object store | MinIO (StatefulSet + PVC) |
 | Despliegue | kustomize para todo excepto Airflow (Helm chart oficial `apache-airflow/airflow`) |
 
+## Quickstart con Makefile
+
+Si estás en **Linux, macOS o WSL** con `make`, `kubectl`, `helm` y `kustomize` instalados, puedes levantar todo el cluster con un solo comando:
+
+```bash
+make up
+```
+
+Esto ejecuta secuencialmente lo mismo que el [Quickstart desde cero](#quickstart-desde-cero), pero automatizado:
+
+1. Aplica `k8s/foundations` (Postgres + MinIO) y espera al job `minio-bootstrap`.
+2. Aplica `k8s/mlflow`.
+3. Aplica el secret de Airflow y hace `helm upgrade --install airflow` con `airflow/values/values-local.yaml`.
+4. Aplica `k8s/api`, `k8s/ui`, `k8s/prometheus`, `k8s/grafana` y `k8s/locust`.
+5. Espera a que `airflow-api-server` esté Ready y **dispara automáticamente el DAG** `diabetes_mlops_pipeline` (target `trigger-dag`) — sin entrar a la UI de Airflow.
+
+Tras `make up`, abre los port-forwards:
+
+```bash
+make forward          # Linux/macOS/WSL — corre en background, usa /tmp/pf.pids
+make stop-forward     # detener todos los forwards
+```
+
+> En **Windows PowerShell** los targets `forward` / `stop-forward` no funcionan (usan `xargs`, `kill` y rutas Unix). Usa el script PowerShell equivalente: `.\scripts\port-forward-all.ps1`.
+
+Otros targets útiles:
+
+| Comando | Qué hace |
+|---|---|
+| `make up` | Despliega todo el stack y dispara el DAG |
+| `make down` | Elimina todos los recursos en orden inverso (Helm uninstall + `kustomize delete`) |
+| `make forward` | Levanta los 9 port-forwards en background (Linux/macOS) |
+| `make stop-forward` | Mata todos los port-forwards |
+| `make status` | `kubectl get pods,svc -n mlops` |
+| `make trigger-dag` | Espera al api-server de Airflow y dispara el DAG manualmente |
+
+> **Importante:** `make up` usa las imágenes ya publicadas en DockerHub bajo `dandiazc/*` (ver tabla de [Componentes](#componentes)). No necesitas construir ni publicar nada.
+
 ## Quickstart desde cero
 
 Esta sección está pensada para alguien que **nunca ha visto el repo** y quiere levantar todo el sistema en su máquina.
@@ -97,7 +136,8 @@ Esta sección está pensada para alguien que **nunca ha visto el repo** y quiere
 | Kubernetes local | cualquiera | `kind`, `minikube`, `microk8s` o Docker Desktop K8s. Recomendado: Docker Desktop con K8s activado |
 | `kubectl` | 1.27+ | Cliente de Kubernetes |
 | `helm` | 3.x | Para instalar Airflow |
-| Cuenta DockerHub (opcional) | — | Solo si vas a construir y publicar imágenes propias |
+| `kustomize` | 5.x | Procesar overlays de los manifiestos (`make` lo invoca; `kubectl apply -k` también funciona) |
+| `make` (opcional) | GNU Make | Para usar el [Quickstart con Makefile](#quickstart-con-makefile) en Linux/macOS/WSL |
 | PowerShell 5.1+ o Bash | — | Para correr los scripts del repo |
 
 Verificación rápida:
@@ -117,26 +157,7 @@ cd Mlops_talleres
 git checkout DanielDiaz/proyecto2
 ```
 
-### Paso 2 — (Opcional) Construir imágenes propias
-
-Si solo quieres consumir las imágenes publicadas en DockerHub, **salta este paso**. Las imágenes referenciadas en los manifiestos ya son públicas.
-
-Si quieres construir las tuyas, **sustituye `dandiazc` por tu usuario** en los manifiestos (`k8s/*/deployment.yaml`, `airflow/values/values-local.yaml`) y luego:
-
-```bash
-# Build context = repo root para todas
-docker build -f docker/api/Dockerfile     -t TU_USUARIO/mlops-api:v0.3.0 .
-docker build -f docker/ui/Dockerfile      -t TU_USUARIO/mlops-ui:v0.1.0 .
-docker build -f docker/mlflow/Dockerfile  -t TU_USUARIO/mlops-mlflow:v0.1.0 .
-docker build -f airflow/Dockerfile        -t TU_USUARIO/mlops-airflow:v1.2.0 .
-
-docker push TU_USUARIO/mlops-api:v0.3.0
-docker push TU_USUARIO/mlops-ui:v0.1.0
-docker push TU_USUARIO/mlops-mlflow:v0.1.0
-docker push TU_USUARIO/mlops-airflow:v1.2.0
-```
-
-### Paso 3 — Desplegar fundaciones (Postgres + MinIO)
+### Paso 2 — Desplegar fundaciones (Postgres + MinIO)
 
 ```bash
 kubectl apply -k k8s/foundations
@@ -145,14 +166,14 @@ kubectl -n mlops rollout status statefulset/minio
 kubectl -n mlops logs job/minio-bootstrap   # confirma "bucket created: mlflow-artifacts"
 ```
 
-### Paso 4 — Desplegar MLflow
+### Paso 3 — Desplegar MLflow
 
 ```bash
 kubectl apply -k k8s/mlflow
 kubectl -n mlops rollout status deployment/mlflow
 ```
 
-### Paso 5 — Desplegar Airflow
+### Paso 4 — Desplegar Airflow
 
 ```bash
 helm repo add apache-airflow https://airflow.apache.org
@@ -167,7 +188,7 @@ Espera ~2 minutos a que estén `Running` todos los pods (`scheduler`, `api-serve
 kubectl -n mlops get pods -l release=airflow -w
 ```
 
-### Paso 6 — Desplegar API, UI y observabilidad
+### Paso 5 — Desplegar API, UI y observabilidad
 
 ```bash
 kubectl apply -k k8s/api
@@ -179,7 +200,7 @@ kubectl apply -k k8s/locust
 
 > **Nota:** la API arrancará en `CrashLoopBackOff` o fallará el readiness probe hasta que el DAG haya promovido un modelo `champion`. Es esperado en esta etapa.
 
-### Paso 7 — Abrir todos los port-forwards
+### Paso 6 — Abrir todos los port-forwards
 
 En PowerShell (Windows):
 
@@ -201,7 +222,7 @@ Esto expone localmente todos los servicios. Quick links:
 | Locust UI | http://localhost:8089 | — |
 | PostgreSQL | `localhost:5432` | `mlops_user / mlops_pass_2026` (db: `mlops`) |
 
-### Paso 8 — Disparar el DAG por primera vez
+### Paso 7 — Disparar el DAG por primera vez
 
 1. Entra a Airflow UI: http://localhost:8080
 2. Busca el DAG `diabetes_mlops_pipeline` y enciéndelo (toggle)
@@ -210,7 +231,7 @@ Esto expone localmente todos los servicios. Quick links:
 
 Cada ejecución carga los siguientes 15k registros del CSV. Para procesar los 101k completos, dispara el DAG **7 veces** o deja que el schedule diario haga su trabajo.
 
-### Paso 9 — Validar end-to-end
+### Paso 8 — Validar end-to-end
 
 Tras la primera ejecución exitosa del DAG:
 
@@ -226,7 +247,7 @@ curl http://localhost:8000/model-info
 # Abre http://localhost:8501, click "Cargar valores de ejemplo (130-US)", luego "Predecir"
 ```
 
-### Paso 10 — Probar la carga
+### Paso 9 — Probar la carga
 
 1. Abre Locust: http://localhost:8089
 2. Configura `Number of users = 50`, `Spawn rate = 5`, `Host = http://api.mlops.svc.cluster.local:8000`
@@ -430,7 +451,8 @@ Workers desplegados en el cluster ([k8s/locust/](k8s/locust/)). El payload del e
 │   └── REPORT.md
 ├── loadtest/locustfile.py          # locust local (mantener sync con k8s/locust/configmap.yaml)
 ├── scripts/
-│   └── port-forward-all.ps1        # Levanta forwards de los 10 servicios
+│   └── port-forward-all.ps1        # Levanta forwards de los 10 servicios (Windows)
+├── Makefile                        # `make up | down | forward | trigger-dag` (Linux/macOS/WSL)
 └── data/data/Diabetes.csv          # Dataset (gitignored si es grande)
 ```
 
@@ -477,14 +499,18 @@ Define en [k8s/api/configmap.yaml](k8s/api/configmap.yaml) + [k8s/api/secret.yam
 
 ### Levantar todos los port-forwards de una vez
 
-```powershell
-.\scripts\port-forward-all.ps1
+**Linux / macOS / WSL** (usa el Makefile, procesos en background con PIDs en `/tmp/pf.pids`):
+
+```bash
+make forward
+make stop-forward     # para detenerlos
 ```
 
-Detenerlos:
+**Windows PowerShell** (los targets `make forward` usan `xargs`/`kill` y no funcionan en PS):
 
 ```powershell
-Get-Job | Stop-Job | Remove-Job
+.\scripts\port-forward-all.ps1
+Get-Job | Stop-Job | Remove-Job   # detenerlos
 ```
 
 ### Reiniciar la API tras un cambio de imagen
