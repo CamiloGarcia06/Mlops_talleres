@@ -1,4 +1,4 @@
-"""FastAPI inference service for the diabetes MLOps project."""
+"""Servicio de inferencia FastAPI para el proyecto MLOps de diabetes."""
 
 from __future__ import annotations
 
@@ -83,11 +83,11 @@ def reload_model() -> ModelInfo:
 
 
 def _predict_with_model(lm: LoadedModel, features: dict) -> tuple[int, float | None]:
-    """Run the MLflow pyfunc model on a single feature dict.
+    """Ejecuta el modelo pyfunc de MLflow sobre un dict de features.
 
-    The model is a sklearn Pipeline that bundles its own OneHotEncoder, so
-    the API just passes raw features through. New categorical values are
-    handled by `handle_unknown="ignore"` in the encoder.
+    El modelo es un Pipeline de sklearn que incluye su propio OneHotEncoder,
+    por lo que la API solo pasa las features crudas. Los valores categóricos
+    nuevos son manejados por `handle_unknown="ignore"` en el encoder.
     """
     df = pd.DataFrame([features])
     with INFERENCE_LATENCY_SECONDS.time():

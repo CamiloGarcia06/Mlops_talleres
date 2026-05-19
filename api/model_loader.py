@@ -1,17 +1,20 @@
-"""Thread-safe MLflow model cache with TTL and explicit reload.
+"""Cache thread-safe del modelo MLflow con TTL y recarga manual.
 
-Strategy:
-  - On first request, the model identified by alias `champion` is downloaded
-    from MLflow (artifacts come from MinIO via the S3 endpoint).
-  - The loaded model + its registry version is kept in memory.
-  - The cache expires after `model_cache_ttl_seconds`; the next prediction
-    triggers a re-resolution of the alias. This means a champion promotion
-    propagates automatically without redeploy, with at most TTL-seconds of
-    staleness.
-  - `POST /reload-model` forces an immediate refresh.
+Estrategia de carga del modelo en la API:
+  - En la primera petición (o en el startup vía lifespan) se descarga
+    desde MLflow el modelo identificado por el alias `champion`. Los
+    artefactos vienen de MinIO a través del endpoint S3-compatible.
+  - El modelo cargado + el número de versión del registry quedan en
+    memoria como un `LoadedModel`.
+  - El cache expira tras `model_cache_ttl_seconds`. La siguiente
+    predicción dispara una nueva resolución del alias y recarga el
+    modelo si cambió. Así, una promoción se propaga automáticamente
+    sin redeploy, con un retraso máximo igual al TTL.
+  - `POST /reload-model` fuerza un refresh inmediato (útil al terminar
+    el DAG para no esperar el TTL).
 
-The contract intentionally avoids any local file path: the only source of
-truth is MLflow's Model Registry.
+El contrato evita deliberadamente cualquier ruta a archivos locales:
+la única fuente de verdad del modelo es el Model Registry de MLflow.
 """
 
 from __future__ import annotations
@@ -32,14 +35,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LoadedModel:
+    """Representa un modelo que está cargado en memoria."""
+
     model: Any
     name: str
     version: str
     alias: str
-    loaded_at: float
+    loaded_at: float  # epoch (segundos) en el que se cargó
 
 
 class ModelCache:
+    """Cache singleton con lock para que múltiples requests concurrentes
+    no recarguen el modelo al mismo tiempo.
+    """
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._loaded: LoadedModel | None = None
@@ -48,31 +57,42 @@ class ModelCache:
         self._client = MlflowClient()
 
     def get(self) -> LoadedModel:
+        """Devuelve el modelo cacheado; lo recarga si está vencido o ausente."""
         with self._lock:
             if self._loaded is None or self._is_expired(self._loaded):
                 self._loaded = self._load()
             return self._loaded
 
     def reload(self) -> LoadedModel:
+        """Fuerza una recarga inmediata, ignorando el TTL."""
         with self._lock:
             self._loaded = self._load()
             return self._loaded
 
-    # ----- internals ------------------------------------------------------
+    # ----- internos -------------------------------------------------------
 
     def _is_expired(self, lm: LoadedModel) -> bool:
+        """¿El modelo cacheado superó el TTL configurado?
+
+        Un TTL <= 0 desactiva la expiración (el modelo se mantiene en
+        memoria hasta un reload manual o reinicio del pod).
+        """
         ttl = self._settings.model_cache_ttl_seconds
         if ttl <= 0:
             return False
         return (time.time() - lm.loaded_at) > ttl
 
     def _load(self) -> LoadedModel:
+        """Resuelve el alias champion en MLflow y descarga el modelo."""
         s = self._settings
+        # Resolución del alias → versión concreta (entero).
         version = self._client.get_model_version_by_alias(
             s.registered_model_name, s.champion_alias
         )
+        # Descarga el modelo como pyfunc para que .predict() acepte un
+        # DataFrame sin que tengamos que conocer el flavor exacto.
         uri = f"models:/{s.registered_model_name}@{s.champion_alias}"
-        logger.info("loading model %s version=%s", uri, version.version)
+        logger.info("cargando modelo %s versión=%s", uri, version.version)
         model = mlflow.pyfunc.load_model(uri)
         return LoadedModel(
             model=model,
@@ -83,10 +103,13 @@ class ModelCache:
         )
 
 
+# Instancia singleton del cache. Se inicializa perezosamente para que
+# importar este módulo no produzca side-effects (útil en tests).
 _cache: ModelCache | None = None
 
 
 def get_cache() -> ModelCache:
+    """Devuelve el ModelCache singleton, creándolo en la primera llamada."""
     global _cache
     if _cache is None:
         _cache = ModelCache()

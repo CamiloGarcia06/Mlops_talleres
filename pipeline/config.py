@@ -1,7 +1,9 @@
-"""Centralized configuration read from environment variables.
+"""Configuración centralizada leída desde variables de entorno.
 
-Defaults assume in-cluster service DNS. Locally, override with port-forwards
-and the corresponding env vars before invoking the CLI.
+Los valores por defecto asumen que el código corre dentro del cluster de
+Kubernetes (servicios resueltos por DNS interno). Para ejecutar localmente,
+abre los port-forwards y exporta las variables correspondientes antes de
+invocar el CLI.
 """
 
 from __future__ import annotations
@@ -12,23 +14,37 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Settings:
+    # Conexión a PostgreSQL (datos raw / clean / inferencias)
     pg_dsn: str
+    # URL del servidor MLflow para tracking y registry
     mlflow_tracking_uri: str
+    # Endpoint S3-compatible (MinIO) donde MLflow guarda los artefactos
     s3_endpoint_url: str
     aws_access_key_id: str
     aws_secret_access_key: str
 
+    # Ruta al CSV fuente que la tarea de ingesta lee por lotes
     source_csv: str
+    # Tamaño máximo del lote de ingesta (el enunciado fija el tope en 15.000)
     batch_size: int
+    # Semilla para reproducibilidad del split y los modelos
     random_seed: int
 
+    # Identificadores usados en MLflow
     experiment_name: str
     registered_model_name: str
     champion_alias: str
-    primary_metric: str  # name of the metric used for selection (logged as `primary_metric`)
+    # Nombre de la métrica que decide qué modelo se promueve (se loguea
+    # como `primary_metric` en cada run de MLflow)
+    primary_metric: str
 
 
 def load() -> Settings:
+    """Construye un objeto Settings leyendo cada variable de entorno.
+
+    Si la variable no existe, se usa un valor por defecto pensado para el
+    cluster de Kubernetes (resoluciones tipo `*.mlops.svc.cluster.local`).
+    """
     return Settings(
         pg_dsn=os.environ.get(
             "PG_DSN",
@@ -55,7 +71,14 @@ def load() -> Settings:
 
 
 def export_aws_env(settings: Settings) -> None:
-    """Ensure boto3 / mlflow pick up the configured S3 credentials."""
+    """Publica las credenciales de S3/MinIO como variables de entorno.
+
+    Boto3 y MLflow leen estas variables directamente del entorno del
+    proceso para autenticarse contra el bucket de artefactos. Llamar a
+    esta función garantiza que los valores resueltos en `Settings`
+    queden disponibles para esas librerías aunque hayan sido cargados
+    desde otra fuente (p. ej. un Secret de Kubernetes).
+    """
     os.environ["AWS_ACCESS_KEY_ID"] = settings.aws_access_key_id
     os.environ["AWS_SECRET_ACCESS_KEY"] = settings.aws_secret_access_key
     os.environ["MLFLOW_S3_ENDPOINT_URL"] = settings.s3_endpoint_url

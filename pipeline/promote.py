@@ -1,10 +1,10 @@
-"""Compare a freshly registered candidate to the current `champion` and
-optionally promote it.
+"""Compara el candidato recién entrenado contra el champion actual y, si gana, lo promueve.
 
-The champion is identified by an MLflow Model Registry alias (default
-`champion`). Stages are deprecated since MLflow 2.9, so aliases are the
-preferred mechanism. The selection metric is read from the run that backs
-the candidate version (`primary_metric`).
+El modelo productivo se identifica mediante un alias en el Model Registry
+de MLflow (por defecto `champion`). Desde MLflow 2.9 los `stages`
+(Production/Staging) están deprecados; los aliases son la forma
+recomendada. La métrica de selección se lee desde el run que respaldó la
+versión candidata (se guarda como `primary_metric`).
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _client() -> MlflowClient:
+    """Crea un MlflowClient con el tracking URI y las credenciales S3 ya configurados."""
     settings = load()
     export_aws_env(settings)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -27,17 +28,29 @@ def _client() -> MlflowClient:
 
 
 def _metric(client: MlflowClient, run_id: str, name: str) -> float:
+    """Lee una métrica puntual desde un run específico de MLflow."""
     return float(client.get_run(run_id).data.metrics.get(name, float("-inf")))
 
 
 def compare(candidate: dict) -> dict:
-    """Inputs the dict returned by `train.run()`. Returns a comparison summary."""
+    """Compara el candidato vs. el champion vigente y devuelve un resumen.
+
+    El parámetro `candidate` es el dict que retorna `train.run()` con la
+    forma {run_id, version, metric, model_name}.
+
+    Regla de decisión:
+      - Si no existe champion → promover.
+      - Si existe champion → promover solo si el candidato lo supera
+        estrictamente en `primary_metric`.
+    """
     settings = load()
     client = _client()
 
     raw_metric = candidate.get("metric")
     candidate_metric = float(raw_metric) if raw_metric is not None else 0.0
 
+    # Intentamos resolver el champion actual. Si no existe (primer run
+    # del proyecto) capturamos la excepción y dejamos campos en None.
     try:
         champion_version = client.get_model_version_by_alias(
             settings.registered_model_name, settings.champion_alias
@@ -56,7 +69,7 @@ def compare(candidate: dict) -> dict:
         "champion_metric": champion_metric,
         "decision": decision,
     }
-    logger.info("compare: %s", summary)
+    logger.info("comparación: %s", summary)
     return summary
 
 
@@ -87,29 +100,33 @@ def promote_best(candidates: list[dict]) -> dict:
 
 
 def promote(candidate: dict) -> dict:
-    """Promote the candidate to `champion` if it beats the current champion."""
+    """Aplica la decisión de `compare()`: si gana el candidato, mueve el alias champion."""
     settings = load()
     client = _client()
 
     decision = compare(candidate)
     if decision["decision"] == "promote" and candidate.get("version"):
+        # set_registered_model_alias es atómico: re-apunta el alias
+        # `champion` a la nueva versión sin necesidad de borrar el
+        # anterior. La API recogerá el cambio en el próximo refresh
+        # del cache o al recibir POST /reload-model.
         client.set_registered_model_alias(
             name=settings.registered_model_name,
             alias=settings.champion_alias,
             version=str(candidate["version"]),
         )
         logger.info(
-            "promoted version %s to alias '%s'",
+            "se promovió la versión %s al alias '%s'",
             candidate["version"],
             settings.champion_alias,
         )
         decision["promoted"] = True
     else:
-        logger.info("champion not changed: %s", decision)
+        logger.info("champion sin cambios: %s", decision)
         decision["promoted"] = False
     return decision
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    print("promote requires a candidate dict; invoke via the CLI 'all' command")
+    print("promote requiere un dict de candidato; invocar vía el comando CLI 'all'")

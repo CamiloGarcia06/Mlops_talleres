@@ -1,7 +1,7 @@
-"""Streamlit inference UI for the Diabetes MLOps project.
+"""UI de inferencia Streamlit para el proyecto MLOps de diabetes.
 
-The UI communicates exclusively with the FastAPI inference service.
-It does NOT import mlflow, psycopg2 or any database driver.
+La UI se comunica exclusivamente con el servicio de inferencia FastAPI.
+NO importa mlflow, psycopg2 ni ningún driver de base de datos.
 """
 
 from __future__ import annotations
@@ -12,10 +12,11 @@ import client
 from examples import PIMA_SAMPLE_PAYLOAD, SAMPLE_PAYLOAD
 
 # ---------------------------------------------------------------------------
-# Raw column defaults — same ~40 columns the model's sklearn Pipeline expects.
-# Categoricals are plain strings; numerics are floats. The model's
-# OneHotEncoder has handle_unknown="ignore", so any unseen value here will
-# be silently dropped instead of failing.
+# Defaults de columnas crudas — las mismas ~40 columnas que el Pipeline
+# de sklearn del modelo espera. Las categóricas son strings planos; las
+# numéricas son floats. El OneHotEncoder del modelo tiene
+# handle_unknown="ignore", por lo que cualquier valor no visto será
+# descartado silenciosamente sin fallar.
 # ---------------------------------------------------------------------------
 _RAW_DEFAULTS: dict = {
     # Numerics
@@ -32,7 +33,7 @@ _RAW_DEFAULTS: dict = {
     "number_emergency": 0.0,
     "number_inpatient": 0.0,
     "number_diagnoses": 9.0,
-    # Categoricals — defaults match the most frequent value in the dataset
+    # Categóricas — defaults coinciden con el valor más frecuente en el dataset
     "race": "Caucasian",
     "gender": "Female",
     "age": "[60-70)",
@@ -82,10 +83,10 @@ _A1C_MAP = {0: "None", 1: ">7", 2: ">8", 3: "Norm"}
 
 
 def _to_model_features(form: dict) -> dict:
-    """Overlay form values onto the raw-defaults dict.
+    """Superpone valores del formulario sobre el dict de defaults crudos.
 
-    The model is a sklearn Pipeline that does its own one-hot encoding, so
-    we just need to send raw categorical strings + raw numerics.
+    El modelo es un Pipeline de sklearn que hace su propio encoding one-hot,
+    así que solo necesitamos enviar strings categóricos crudos + numéricos crudos.
     """
     payload = dict(_RAW_DEFAULTS)
 
@@ -99,14 +100,14 @@ def _to_model_features(form: dict) -> dict:
         if key in form:
             payload[key] = float(form[key])
 
-    # age (integer) → bucket string
+    # edad (entero) → string de rango
     age = int(form.get("age", 60))
     for lo, hi, bucket in _AGE_BUCKETS:
         if lo <= age < hi:
             payload["age"] = bucket
             break
 
-    # Categoricals via lookup
+    # Categóricas mediante tabla de mapeo
     payload["gender"] = _GENDER_MAP.get(int(form.get("gender", 1)), "Female")
     payload["change"] = _CHANGE_MAP.get(int(form.get("change", 0)), "No")
     payload["diabetesMed"] = _DIABETES_MED_MAP.get(int(form.get("diabetes_med", 1)), "Yes")
@@ -117,7 +118,7 @@ def _to_model_features(form: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Page config
+# Configuración de página
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Diabetes Predictor",
@@ -126,7 +127,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Sidebar: model info
+# Barra lateral: información del modelo
 # ---------------------------------------------------------------------------
 st.sidebar.title("Diabetes Predictor")
 st.sidebar.markdown("---")
@@ -144,7 +145,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption("UI conectada a la API FastAPI via variable de entorno API_URL.")
 
 # ---------------------------------------------------------------------------
-# Session-state initialisation
+# Inicialización del estado de sesión
 # ---------------------------------------------------------------------------
 _DEFAULT_VALUES: dict = {
     "age": 50,
@@ -171,7 +172,7 @@ for k, v in _DEFAULT_VALUES.items():
         st.session_state[k] = v
 
 # ---------------------------------------------------------------------------
-# Header
+# Encabezado
 # ---------------------------------------------------------------------------
 st.title("Prediccion de Reingreso Hospitalario")
 st.markdown(
@@ -180,7 +181,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Example loader buttons
+# Botones para cargar ejemplos
 # ---------------------------------------------------------------------------
 col_ex1, col_ex2, _ = st.columns([1, 1, 4])
 
@@ -197,7 +198,7 @@ with col_ex2:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Input form
+# Formulario de entrada
 # ---------------------------------------------------------------------------
 st.subheader("Datos del paciente")
 
@@ -207,7 +208,7 @@ _using_pima = any(k in st.session_state for k in _pima_keys)
 
 with st.form("predict_form"):
     if _using_pima:
-        # ---- Pima layout ----
+        # ---- Diseño Pima ----
         c1, c2, c3, c4 = st.columns(4)
         pregnancies = c1.number_input(
             "Pregnancies", min_value=0, max_value=20,
@@ -257,7 +258,7 @@ with st.form("predict_form"):
         use_conversion = False
 
     else:
-        # ---- Diabetes 130-US layout ----
+        # ---- Diseño Diabetes 130-US ----
         c1, c2, c3 = st.columns(3)
 
         age = c1.number_input(
@@ -368,7 +369,7 @@ with st.form("predict_form"):
     submitted = st.form_submit_button("Predecir", type="primary")
 
 # ---------------------------------------------------------------------------
-# Prediction result
+# Resultado de la predicción
 # ---------------------------------------------------------------------------
 if submitted:
     api_payload = _to_model_features(features_payload) if use_conversion else features_payload

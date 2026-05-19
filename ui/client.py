@@ -1,9 +1,9 @@
-"""HTTP client wrapper for the inference API.
+"""Envoltorio de cliente HTTP para la API de inferencia.
 
-All network calls from the UI pass through this module so that error
-handling, timeouts, and the base URL are defined in one place.
-The UI never imports mlflow, psycopg2 or any DB driver — all inference
-goes through the API.
+Todas las llamadas de red desde la UI pasan por este módulo para que el
+manejo de errores, timeouts y la URL base se definan en un solo lugar.
+La UI nunca importa mlflow, psycopg2 o ningún driver de BD — toda la
+inferencia pasa por la API.
 """
 
 from __future__ import annotations
@@ -21,18 +21,18 @@ def _base() -> str:
 
 
 def get_model_info(timeout: int = 30) -> dict[str, Any]:
-    """Return the /model-info payload or raise requests.RequestException."""
+    """Devuelve el payload de /model-info o lanza requests.RequestException."""
     resp = requests.get(f"{_base()}/model-info", timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
 def predict(features: dict[str, Any], timeout: int = 30) -> dict[str, Any]:
-    """Call POST /predict and return the response dict.
+    """Llama a POST /predict y devuelve el dict de respuesta.
 
-    Raises:
-        requests.HTTPError: on 4xx/5xx responses.
-        requests.RequestException: on network failures.
+    Lanza:
+        requests.HTTPError: en respuestas 4xx/5xx.
+        requests.RequestException: en fallos de red.
     """
     resp = requests.post(
         f"{_base()}/predict",

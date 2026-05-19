@@ -1,11 +1,11 @@
-"""Locust load-test for the Diabetes Inference API.
+"""Prueba de carga Locust para la API de Inferencia de Diabetes.
 
-Target endpoint: POST /predict
-Payload: raw feature schema (~40 columns: categoricals as strings,
-numerics as floats). The model's sklearn Pipeline does its own one-hot
-encoding internally.
+Endpoint objetivo: POST /predict
+Payload: esquema de features crudos (~40 columnas: categóricas como strings,
+numéricas como floats). El Pipeline de sklearn del modelo hace su propio
+encoding one-hot internamente.
 
-Run from the Locust UI or headless:
+Ejecutar desde la UI de Locust o sin interfaz:
     locust -f locustfile.py --headless -u 50 -r 10 --run-time 5m \
            --host http://api:8000 --html report.html
 """
@@ -16,10 +16,11 @@ import random
 
 from locust import HttpUser, between, task
 
-# Raw feature dict that matches the schema produced by pipeline/preprocess.py
-# after the Patrón 1 refactor: ~13 numerics + ~32 string categoricals.
+# Dict de features crudos que coincide con el esquema producido por
+# pipeline/preprocess.py después del refactor de Patrón 1: ~13 numéricos
+# + ~32 categóricos string.
 _BASE_SAMPLE: dict = {
-    # Numerics
+    # Numéricos
     "encounter_id": 2278392.0,
     "patient_nbr": 8222157.0,
     "admission_type_id": 1.0,
@@ -33,7 +34,7 @@ _BASE_SAMPLE: dict = {
     "number_emergency": 0.0,
     "number_inpatient": 0.0,
     "number_diagnoses": 9.0,
-    # Categoricals (strings — encoder handles them)
+    # Categóricas (strings — el encoder las maneja)
     "race": "Caucasian",
     "gender": "Female",
     "age": "[60-70)",
@@ -70,14 +71,14 @@ _BASE_SAMPLE: dict = {
 
 
 class PredictUser(HttpUser):
-    """Simulates a client calling /predict repeatedly."""
+    """Simula un cliente llamando a /predict repetidamente."""
 
     wait_time = between(0.1, 0.5)
 
     @task
     def predict(self) -> None:
         payload = dict(_BASE_SAMPLE)
-        # Perturb key numeric features so each request looks slightly different.
+        # Perturba las features numéricas clave para que cada request se vea ligeramente diferente.
         payload["num_lab_procedures"] = float(random.randint(1, 80))
         payload["num_medications"] = float(random.randint(1, 30))
         payload["time_in_hospital"] = float(random.randint(1, 14))
@@ -97,5 +98,5 @@ class PredictUser(HttpUser):
 
     @task(weight=1)
     def health(self) -> None:
-        """Light probe to confirm the API is alive."""
+        """Prueba ligera para confirmar que la API está viva."""
         self.client.get("/health", name="/health")
