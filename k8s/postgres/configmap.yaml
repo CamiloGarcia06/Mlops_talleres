@@ -18,9 +18,8 @@ data:
     CREATE DATABASE airflow;
     CREATE DATABASE mlflow;
   02-schemas.sql: |
-    -- Las tres capas de datos requeridas por la spec viven en la base mlops
-    -- (creada por POSTGRES_DB) y se separan por schema.
     \connect mlops
     CREATE SCHEMA IF NOT EXISTS raw;
     CREATE SCHEMA IF NOT EXISTS clean;
+    CREATE SCHEMA IF NOT EXISTS audit;
     CREATE SCHEMA IF NOT EXISTS inference;

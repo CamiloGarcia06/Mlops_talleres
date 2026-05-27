@@ -1,0 +1,37 @@
+name: Build & Push MLflow
+
+on:
+  push:
+    branches: [main, CamiloGarcia/proyecto-final]
+    paths:
+      - 'docker/mlflow/**'
+  pull_request:
+    paths:
+      - 'docker/mlflow/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: camilogarcia06/mlops-mlflow
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mlflow/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

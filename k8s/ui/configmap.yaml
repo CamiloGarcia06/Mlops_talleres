@@ -5,3 +5,4 @@ metadata:
   namespace: mlops
 data:
   API_URL: http://api.mlops.svc.cluster.local:8000
+  PG_DSN: postgresql://mlops_user:mlops_pass_2026@postgres-service.mlops.svc.cluster.local:5432/mlops

@@ -1,44 +1,39 @@
-"""Payloads de ejemplo predefinidos para el formulario de inferencia.
-
-Estos coinciden con el conjunto de features producido por pipeline/preprocess.py
-para el dataset de hospitales Diabetes 130-US (columnas numéricas / codificadas).
-El payload cubre los features más discriminantes usados por el modelo entrenado;
-cualquier feature adicional que espere el modelo se comportará según su propio
-imputador / manejo de defaults.
-"""
+"""Payloads de ejemplo para el formulario de inferencia de propiedades."""
 
 from __future__ import annotations
 
-# Perfil típico de paciente reingresado
-SAMPLE_PAYLOAD: dict = {
-    "age": 65,
-    "time_in_hospital": 5,
-    "num_lab_procedures": 44,
-    "num_procedures": 1,
-    "num_medications": 17,
-    "number_outpatient": 0,
-    "number_emergency": 0,
-    "number_inpatient": 1,
-    "number_diagnoses": 9,
-    "max_glu_serum": 0,
-    "a1c_result": 0,
-    "change": 1,
-    "diabetes_med": 1,
-    "gender": 1,
-    "admission_type_id": 1,
-    "discharge_disposition_id": 1,
-    "admission_source_id": 7,
+EXAMPLE_HOUSE_1: dict = {
+    "bed": 3.0,
+    "bath": 2.0,
+    "acre_lot": 0.5,
+    "house_size": 1800.0,
+    "city": "Hartford",
+    "state": "Connecticut",
+    "status": "for_sale",
+    "zip_code": "6105",
+    "prev_sold_year": 2015.0,
 }
 
-# Payload minimalista estilo Pima (8 features) — usado como fallback si el
-# modelo fue entrenado con el dataset Pima en su lugar.
-PIMA_SAMPLE_PAYLOAD: dict = {
-    "Pregnancies": 6,
-    "Glucose": 148,
-    "BloodPressure": 72,
-    "SkinThickness": 35,
-    "Insulin": 0,
-    "BMI": 33.6,
-    "DiabetesPedigreeFunction": 0.627,
-    "Age": 50,
+EXAMPLE_HOUSE_2: dict = {
+    "bed": 5.0,
+    "bath": 3.0,
+    "acre_lot": 1.2,
+    "house_size": 3200.0,
+    "city": "Greenwich",
+    "state": "Connecticut",
+    "status": "for_sale",
+    "zip_code": "6830",
+    "prev_sold_year": 2020.0,
+}
+
+EXAMPLE_HOUSE_3: dict = {
+    "bed": 2.0,
+    "bath": 1.0,
+    "acre_lot": 0.1,
+    "house_size": 900.0,
+    "city": "San Juan",
+    "state": "Puerto Rico",
+    "status": "sold",
+    "zip_code": "901",
+    "prev_sold_year": 2010.0,
 }

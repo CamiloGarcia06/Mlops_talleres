@@ -4,6 +4,7 @@ metadata:
   name: minio-pvc
   namespace: mlops
 spec:
+  storageClassName: microk8s-hostpath
   accessModes: [ReadWriteOnce]
   resources:
     requests:

@@ -8,7 +8,7 @@ COPY pipeline/ /opt/airflow/pipeline/
 ENV PYTHONPATH=/opt/airflow
 
 USER airflow
-RUN pip install --no-cache-dir -r /requirements.txt
+RUN pip install --no-cache-dir "setuptools<81" && \
+    pip install --no-cache-dir -r /requirements.txt
 
 COPY airflow/dags/ /opt/airflow/dags/
-COPY data/Diabetes.csv /opt/airflow/data/Diabetes.csv

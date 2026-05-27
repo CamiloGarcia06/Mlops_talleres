@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: mlflow
-          image: dandiazc/mlops-mlflow:v1.0.0
+          image: camilogarcia06/mlops-mlflow:latest
           ports:
             - containerPort: 5000
               name: http

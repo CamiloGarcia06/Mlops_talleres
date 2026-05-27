@@ -20,9 +20,9 @@ webserverSecretKey: "mlops2026-stable-secret-key-proyecto2"
 # v2.0.4 adds: RF n_estimators 200->100, numerics cast to float64 in train.
 images:
   airflow:
-    repository: dandiazc/mlops-airflow
-    tag: v1.0.0
-    pullPolicy: IfNotPresent
+    repository: camilogarcia06/mlops-airflow
+    tag: latest
+    pullPolicy: Always
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).
 postgresql:
@@ -53,8 +53,10 @@ env:
     value: "http://mlflow-service.mlops.svc.cluster.local:5000"
   - name: MLFLOW_S3_ENDPOINT_URL
     value: "http://minio-service.mlops.svc.cluster.local:9000"
-  - name: SOURCE_CSV
-    value: "/opt/airflow/data/Diabetes.csv"
+  - name: DATA_API_URL
+    value: "http://192.168.2.6:8000"
+  - name: GROUP_NUMBER
+    value: "1"
   - name: BATCH_SIZE
     value: "15000"
 

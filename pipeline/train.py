@@ -1,51 +1,26 @@
-"""Entrena varios modelos candidatos y los registra en MLflow.
-
-Se entrenan dos baselines: LogisticRegression y RandomForestClassifier.
-Cada uno se envuelve en un `Pipeline` de sklearn que incluye el encoder:
-
-    Pipeline([
-        ColumnTransformer([
-            ("cat", OneHotEncoder(handle_unknown="ignore"), columnas_categoricas),
-            ("num", "passthrough",                          columnas_numericas),
-        ]),
-        Classifier(...),
-    ])
-
-De esta forma el encoder queda **serializado junto con el modelo** en
-MLflow. La API recibe features crudas (strings para categóricas, números
-para numéricas) y el propio pipeline aplica el encoding en tiempo de
-inferencia. Si llega un valor categórico nuevo, el flag
-`handle_unknown="ignore"` lo descarta silenciosamente sin romper.
-
-La métrica elegida para la promoción es `f1` porque el target está
-fuertemente desbalanceado (~11% positivos en 130-US) y el costo clínico
-de un falso negativo (un reingreso no detectado) es más alto que el de
-un falso positivo. F1 balancea precision y recall sobre la clase
-positiva, mientras que accuracy sería engañosa.
-"""
+"""Entrena modelos de regresion y los registra en MLflow."""
 
 from __future__ import annotations
 
+import io
 import logging
+import subprocess
 from typing import Any
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from mlflow.models.signature import infer_signature
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from pipeline.config import export_aws_env, load
 from pipeline.db.connection import connect
@@ -54,103 +29,108 @@ logger = logging.getLogger(__name__)
 
 
 def _read_clean(batch_id: str | None) -> pd.DataFrame:
-    """Carga TODAS las filas limpias que ya tengan split asignado.
-
-    Entrenamos sobre el acumulado completo (no solo el batch nuevo) para
-    que el esquema de features que ve el OneHotEncoder sea consistente
-    entre ejecuciones del DAG.
-    """
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT row_hash, split, features, target FROM clean.diabetes_clean "
+            "SELECT row_hash, split, features, target FROM clean.properties_clean "
             "WHERE split IS NOT NULL"
         )
         rows = cur.fetchall()
     if not rows:
-        raise ValueError(f"no hay filas limpias listas para entrenar (batch_id={batch_id!r})")
-    # Expandimos JSONB → columnas planas para que pandas pueda manejar
-    # los dtypes de cada feature de forma independiente.
-    return pd.DataFrame(
-        [
-            {"row_hash": h, "split": s, "target": t, **f}
-            for (h, s, f, t) in rows
-        ]
-    )
+        raise ValueError(f"no hay filas limpias para entrenar (batch_id={batch_id!r})")
+    return pd.DataFrame([{"row_hash": h, "split": s, "target": t, **f} for h, s, f, t in rows])
 
 
 def _split_xy(df: pd.DataFrame, split: str, feature_cols: list[str]):
-    """Devuelve (X, y) filtrando por el valor de la columna `split`."""
     sub = df[df["split"] == split]
     return sub[feature_cols].copy(), sub["target"].values
 
 
 def _build_pipeline(estimator: Any, numeric_cols: list[str], categorical_cols: list[str]) -> Pipeline:
-    """Construye el Pipeline (preprocesador + clasificador).
-
-    El ColumnTransformer aplica:
-      - OneHotEncoder a las categóricas, con `handle_unknown="ignore"`
-        para tolerar valores nuevos en inferencia.
-      - passthrough a las numéricas (sin transformación).
-    """
     preprocessor = ColumnTransformer(
         transformers=[
             ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols),
-            ("num", "passthrough", numeric_cols),
+            ("num", StandardScaler(), numeric_cols),
         ],
         remainder="drop",
         verbose_feature_names_out=False,
     )
     return Pipeline([
         ("preprocessor", preprocessor),
-        ("classifier", estimator),
+        ("regressor", estimator),
     ])
 
 
-_MODEL_ALIASES = {
-    "lr": "logistic_regression",
-    "logistic_regression": "logistic_regression",
-    "rf": "random_forest",
-    "random_forest": "random_forest",
-}
-
-
 def _candidates(seed: int) -> dict[str, Any]:
-    """Define los modelos candidatos a entrenar.
-
-    Ambos usan `class_weight="balanced"` porque el target tiene ~11% de
-    positivos y sin esa pesa los modelos colapsan a predecir siempre 0.
-    """
     return {
-        "logistic_regression": LogisticRegression(
-            max_iter=1000, random_state=seed, class_weight="balanced",
+        "linear_regression": LinearRegression(),
+        "random_forest": RandomForestRegressor(
+            n_estimators=200, max_depth=15, min_samples_split=10,
+            random_state=seed, n_jobs=-1,
         ),
-        "random_forest": RandomForestClassifier(
-            n_estimators=50, max_depth=6, random_state=seed, n_jobs=-1,
-            class_weight="balanced",
+        "gradient_boosting": GradientBoostingRegressor(
+            n_estimators=200, max_depth=8, learning_rate=0.1,
+            random_state=seed,
         ),
     }
 
 
-def run(batch_id: str | None = None, model: str | None = None) -> dict:
-    """Entrena uno o varios candidatos, los registra en MLflow y devuelve el mejor.
+def _regression_metrics(y_true, y_pred) -> dict[str, float]:
+    return {
+        "mae": float(mean_absolute_error(y_true, y_pred)),
+        "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "r2": float(r2_score(y_true, y_pred)),
+    }
 
-    Args:
-        batch_id: id del lote que se está procesando (solo informativo, se
-            usa en el `run_name` de MLflow).
-        model: nombre del candidato a entrenar (`"lr"`, `"rf"`, o sus
-            aliases largos). Si es `None` (default) entrena ambos. Este
-            argumento habilita el patrón de DAG con `t_train_lr` y
-            `t_train_rf` en paralelo.
 
-    Pasos:
-      1. Configura MLflow (tracking URI + experimento).
-      2. Lee los datos limpios + splits desde Postgres.
-      3. Selecciona qué candidatos entrenar según el arg `model`.
-      4. Para cada candidato: arma el pipeline, lo entrena, calcula
-         métricas en val/test, loguea params/metrics/artifacts/modelo
-         en MLflow y registra una nueva versión en el Model Registry.
-      5. Retorna el dict del candidato ganador según `primary_metric`.
-    """
+def _commit_sha() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+def _plot_residuals(y_true, y_pred) -> bytes:
+    residuals = y_true - y_pred
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    ax.scatter(y_pred, residuals, alpha=0.3, s=5)
+    ax.axhline(0, color="red", linestyle="--")
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Residual")
+    ax.set_title("Residuals")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _plot_feature_importance(pipeline_obj: Pipeline, feature_names: list[str]) -> bytes | None:
+    regressor = pipeline_obj.named_steps["regressor"]
+    if not hasattr(regressor, "feature_importances_"):
+        return None
+    preprocessor = pipeline_obj.named_steps["preprocessor"]
+    try:
+        transformed_names = preprocessor.get_feature_names_out().tolist()
+    except Exception:
+        transformed_names = [f"f{i}" for i in range(len(regressor.feature_importances_))]
+
+    importances = regressor.feature_importances_
+    top_n = min(20, len(importances))
+    indices = np.argsort(importances)[-top_n:]
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    ax.barh(range(top_n), importances[indices])
+    ax.set_yticks(range(top_n))
+    ax.set_yticklabels([transformed_names[i] for i in indices], fontsize=8)
+    ax.set_title("Feature Importance (top 20)")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def run(batch_id: str | None = None, model: str | None = None, training_reason: str | None = None) -> dict:
     settings = load()
     export_aws_env(settings)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -159,115 +139,98 @@ def run(batch_id: str | None = None, model: str | None = None) -> dict:
     df = _read_clean(batch_id)
     feature_cols = [c for c in df.columns if c not in {"row_hash", "split", "target"}]
 
-    # Determinamos qué columnas son numéricas vs. categóricas usando los
-    # dtypes que vienen del JSONB. preprocess.py se encargó de castear
-    # las categóricas a str, así que cualquier int/float aquí es genuino.
     train_df = df[df["split"] == "train"][feature_cols]
     numeric_cols = train_df.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = [c for c in feature_cols if c not in numeric_cols]
 
-    # Forzamos todas las numéricas a float64 para que la signature de
-    # MLflow acepte tanto int como float desde los clientes (API/UI).
-    # Si dejamos int64 en columnas como patient_nbr/encounter_id, MLflow
-    # rechaza el downcasting de float64 que envía /predict.
     df[numeric_cols] = df[numeric_cols].astype("float64")
 
     X_train, y_train = _split_xy(df, "train", feature_cols)
-    X_val, y_val = _split_xy(df, "val", feature_cols)
     X_test, y_test = _split_xy(df, "test", feature_cols)
 
-    # Estado inicial del "ganador". Se irá actualizando si algún
-    # candidato supera el primary_metric registrado.
-    best = {"run_id": None, "version": None, "metric": -1.0, "model_name": None}
+    best = {"run_id": None, "version": None, "metric": float("inf"), "model_name": None}
+    commit = _commit_sha()
 
-    # Resolvemos qué candidatos entrenar. Si `model` es None entrenamos
-    # todos; si viene un alias específico filtramos a ese único candidato.
     all_candidates = _candidates(settings.random_seed)
-    if model is None:
-        selected = all_candidates
+    if model:
+        if model not in all_candidates:
+            raise ValueError(f"modelo desconocido {model!r}; opciones: {sorted(all_candidates)}")
+        selected = {model: all_candidates[model]}
     else:
-        key = _MODEL_ALIASES.get(model)
-        if key is None:
-            raise ValueError(
-                f"modelo desconocido {model!r}; opciones válidas: {sorted(_MODEL_ALIASES)}"
-            )
-        selected = {key: all_candidates[key]}
+        selected = all_candidates
+
+    batch_ids_used = []
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT batch_id FROM clean.properties_clean WHERE split IS NOT NULL")
+        batch_ids_used = [r[0] for r in cur.fetchall()]
 
     for name, estimator in selected.items():
-        # Abrimos un run nuevo de MLflow por cada candidato.
         with mlflow.start_run(run_name=f"{name}-{batch_id or 'all'}") as run_:
             pipeline = _build_pipeline(estimator, numeric_cols, categorical_cols)
             pipeline.fit(X_train, y_train)
 
-            # Predicciones para evaluación.
-            y_val_pred = pipeline.predict(X_val)
-            y_val_proba = (
-                pipeline.predict_proba(X_val)[:, 1]
-                if hasattr(pipeline, "predict_proba") else None
-            )
+            y_train_pred = pipeline.predict(X_train)
             y_test_pred = pipeline.predict(X_test)
 
-            # Métricas sobre validación + F1 sobre test (referencia
-            # adicional). `primary_metric` se loguea como copia explícita
-            # de la métrica elegida para la selección/promoción.
-            metrics = {
-                "accuracy": accuracy_score(y_val, y_val_pred),
-                "precision": precision_score(y_val, y_val_pred, zero_division=0),
-                "recall": recall_score(y_val, y_val_pred, zero_division=0),
-                "f1": f1_score(y_val, y_val_pred, zero_division=0),
-                "test_f1": f1_score(y_test, y_test_pred, zero_division=0),
-            }
-            if y_val_proba is not None and len(np.unique(y_val)) > 1:
-                metrics["roc_auc"] = roc_auc_score(y_val, y_val_proba)
-            metrics["primary_metric"] = metrics[settings.primary_metric]
+            train_metrics = _regression_metrics(y_train, y_train_pred)
+            test_metrics = _regression_metrics(y_test, y_test_pred)
 
-            # Registramos hiperparámetros y métricas en MLflow.
+            all_metrics = {
+                f"train_{k}": v for k, v in train_metrics.items()
+            }
+            all_metrics.update({
+                f"test_{k}": v for k, v in test_metrics.items()
+            })
+
             mlflow.log_params({
                 "model_type": name,
                 "batch_id": batch_id or "all",
                 "seed": settings.random_seed,
+                "n_training_rows": len(X_train),
+                "n_features": len(feature_cols),
                 "n_numeric_features": len(numeric_cols),
                 "n_categorical_features": len(categorical_cols),
+                "batch_ids_used": ",".join(batch_ids_used),
             })
-            mlflow.log_metrics(metrics)
+            mlflow.log_metrics(all_metrics)
 
-            # La signature documenta las features CRUDAS que el modelo
-            # espera. Dos precauciones específicas de este cluster:
-            #   - No pasamos `input_example`: hace que MLflow recargue el
-            #     modelo recién guardado para validarlo, y ese round-trip
-            #     se cuelga bajo presión de memoria.
-            #   - Fijamos `pip_requirements` a mano para evitar que MLflow
-            #     intente detectar el entorno automáticamente (hace HTTP
-            #     lookups que se cuelgan detrás del egress del cluster).
-            signature = infer_signature(X_train, pipeline.predict(X_train))
+            mlflow.set_tags({
+                "commit_sha": commit,
+                "training_reason": training_reason or "manual",
+                "pipeline_version": "2.0",
+            })
+
+            residuals_png = _plot_residuals(y_test, y_test_pred)
+            mlflow.log_image(plt.imread(io.BytesIO(residuals_png)), "residuals.png")
+
+            fi_png = _plot_feature_importance(pipeline, feature_cols)
+            if fi_png:
+                mlflow.log_image(plt.imread(io.BytesIO(fi_png)), "feature_importance.png")
+
+            signature = infer_signature(X_train.head(5), pipeline.predict(X_train.head(5)))
             mlflow.sklearn.log_model(
                 sk_model=pipeline,
                 artifact_path="model",
                 registered_model_name=settings.registered_model_name,
                 signature=signature,
-                pip_requirements=[
-                    "mlflow",
-                    "scikit-learn",
-                    "pandas",
-                    "numpy",
-                ],
+                pip_requirements=["mlflow", "scikit-learn", "pandas", "numpy"],
             )
 
-            # Buscamos la versión recién registrada para retornarla.
             from mlflow.tracking import MlflowClient
             client = MlflowClient()
             versions = client.search_model_versions(f"run_id='{run_.info.run_id}'")
             version = versions[0].version if versions else None
 
-            logger.info("run %s metrics=%s version=%s", name, metrics, version)
+            logger.info("run %s test_metrics=%s version=%s", name, test_metrics, version)
 
-            # Si este candidato gana en la métrica principal, lo
-            # marcamos como mejor hasta el momento.
-            if metrics["primary_metric"] > best["metric"]:
+            # Para regresion, menor MAE es mejor
+            if test_metrics["mae"] < best["metric"]:
                 best = {
                     "run_id": run_.info.run_id,
                     "version": version,
-                    "metric": metrics["primary_metric"],
+                    "metric": test_metrics["mae"],
+                    "rmse": test_metrics["rmse"],
+                    "r2": test_metrics["r2"],
                     "model_name": settings.registered_model_name,
                 }
 
