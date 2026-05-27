@@ -1,3 +1,4 @@
+# Build: docker build -f docker/mlflow/Dockerfile -t <user>/mlops-mlflow:<tag> .
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

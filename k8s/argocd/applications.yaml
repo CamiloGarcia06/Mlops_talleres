@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlops-foundations
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CamiloGarcia06/Mlops_talleres.git
+    targetRevision: CamiloGarcia/proyecto-final
+    path: k8s/foundations
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlops-mlflow
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CamiloGarcia06/Mlops_talleres.git
+    targetRevision: CamiloGarcia/proyecto-final
+    path: k8s/mlflow
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlops-api
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CamiloGarcia06/Mlops_talleres.git
+    targetRevision: CamiloGarcia/proyecto-final
+    path: k8s/api
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlops-ui
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CamiloGarcia06/Mlops_talleres.git
+    targetRevision: CamiloGarcia/proyecto-final
+    path: k8s/ui
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
