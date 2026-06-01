@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import pandas as pd
 from psycopg2.extras import execute_batch
 from sklearn.model_selection import train_test_split
 
@@ -17,20 +16,28 @@ logger = logging.getLogger(__name__)
 def run(batch_id: str | None = None) -> dict:
     settings = load()
 
+    # Solo particionamos las filas nuevas (split IS NULL); las ya asignadas
+    # conservan su particion, de modo que el split es incremental (O(lote)).
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, target FROM clean.properties_clean")
+        cur.execute("SELECT id FROM clean.properties_clean WHERE split IS NULL")
         rows = cur.fetchall()
 
     if not rows:
-        raise ValueError(f"no hay filas limpias para particionar (batch_id={batch_id!r})")
+        summary = {"batch_id": batch_id, "train": 0, "test": 0,
+                   "seed": settings.random_seed, "note": "sin filas nuevas"}
+        logger.info("split: nada que particionar (%s)", summary)
+        return summary
 
-    df = pd.DataFrame(rows, columns=["id", "target"])
-
-    ids_train, ids_test = train_test_split(
-        df["id"].tolist(),
-        test_size=0.20,
-        random_state=settings.random_seed,
-    )
+    ids = [r[0] for r in rows]
+    if len(ids) < 5:
+        # lote diminuto: no alcanza para un test significativo, todo a train.
+        ids_train, ids_test = ids, []
+    else:
+        ids_train, ids_test = train_test_split(
+            ids,
+            test_size=0.20,
+            random_state=settings.random_seed,
+        )
 
     assignments = (
         [(row_id, "train") for row_id in ids_train]

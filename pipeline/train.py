@@ -28,12 +28,17 @@ from pipeline.db.connection import connect
 logger = logging.getLogger(__name__)
 
 
-def _read_clean(batch_id: str | None) -> pd.DataFrame:
+def _read_clean(batch_id: str | None, max_rows: int | None = None) -> pd.DataFrame:
+    # Acotamos las filas para mantener el entrenamiento rapido a medida que el
+    # historico crece; max_rows<=0 desactiva el limite (entrena con todo).
+    query = (
+        "SELECT row_hash, split, features, target FROM clean.properties_clean "
+        "WHERE split IS NOT NULL"
+    )
+    if max_rows and max_rows > 0:
+        query += f" LIMIT {int(max_rows)}"
     with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT row_hash, split, features, target FROM clean.properties_clean "
-            "WHERE split IS NOT NULL"
-        )
+        cur.execute(query)
         rows = cur.fetchall()
     if not rows:
         raise ValueError(f"no hay filas limpias para entrenar (batch_id={batch_id!r})")
@@ -61,14 +66,17 @@ def _build_pipeline(estimator: Any, numeric_cols: list[str], categorical_cols: l
 
 
 def _candidates(seed: int) -> dict[str, Any]:
+    # Hiperparametros minimos: el proyecto se evalua por las decisiones
+    # arquitectonicas (branching, registry, promocion), no por la metrica,
+    # asi que priorizamos tiempo de entrenamiento sobre precision.
     return {
         "linear_regression": LinearRegression(),
         "random_forest": RandomForestRegressor(
-            n_estimators=200, max_depth=15, min_samples_split=10,
+            n_estimators=30, max_depth=8, min_samples_split=10,
             random_state=seed, n_jobs=-1,
         ),
         "gradient_boosting": GradientBoostingRegressor(
-            n_estimators=200, max_depth=8, learning_rate=0.1,
+            n_estimators=30, max_depth=3, learning_rate=0.1,
             random_state=seed,
         ),
     }
@@ -136,7 +144,7 @@ def run(batch_id: str | None = None, model: str | None = None, training_reason: 
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(settings.experiment_name)
 
-    df = _read_clean(batch_id)
+    df = _read_clean(batch_id, max_rows=settings.train_max_rows)
     feature_cols = [c for c in df.columns if c not in {"row_hash", "split", "target"}]
 
     train_df = df[df["split"] == "train"][feature_cols]

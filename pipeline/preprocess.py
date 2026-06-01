@@ -28,14 +28,14 @@ TARGET_COL = "price"
 
 
 def _read_raw(batch_id: str | None) -> pd.DataFrame:
+    # status='loaded' = filas aun no procesadas. Tras preprocesar las marcamos
+    # 'processed', de modo que cada corrida solo toca el lote nuevo (O(lote)).
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT row_hash, batch_id, payload FROM raw.properties_raw "
             "WHERE status = 'loaded'"
         )
         rows = cur.fetchall()
-    if not rows:
-        raise ValueError(f"no hay filas crudas para preprocesar (batch_id={batch_id!r})")
     return pd.DataFrame([{"row_hash": h, "batch_id": b, **p} for h, b, p in rows])
 
 
@@ -46,6 +46,9 @@ def _extract_year(series: pd.Series) -> pd.Series:
 
 def run(batch_id: str | None = None) -> dict:
     df = _read_raw(batch_id)
+    if df.empty:
+        logger.info("preprocess: no hay filas nuevas que procesar")
+        return {"batch_id": batch_id, "rows": 0, "note": "sin filas nuevas"}
 
     for col in DROP_COLUMNS:
         if col in df.columns:
@@ -91,8 +94,14 @@ def run(batch_id: str | None = None) -> dict:
     ):
         rows.append((row_hash, batch_id or raw_batch, Json(features), float(t)))
 
+    # Upsert en clean + marca de procesado en raw, atomicos en una transaccion.
+    processed_hashes = [r[0] for r in rows]
     with connect() as conn, conn.cursor() as cur:
         execute_batch(cur, upsert_sql, rows, page_size=1_000)
+        cur.execute(
+            "UPDATE raw.properties_raw SET status = 'processed' WHERE row_hash = ANY(%s)",
+            (processed_hashes,),
+        )
 
     summary = {
         "batch_id": batch_id,

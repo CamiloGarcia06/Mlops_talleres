@@ -17,6 +17,7 @@ class Settings:
     data_api_url: str
     group_number: int
     batch_size: int
+    train_max_rows: int
     random_seed: int
 
     experiment_name: str
@@ -42,8 +43,9 @@ def load() -> Settings:
         aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
         aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin123"),
         data_api_url=os.environ.get("DATA_API_URL", "http://localhost:8000"),
-        group_number=int(os.environ.get("GROUP_NUMBER", "1")),
+        group_number=int(os.environ.get("GROUP_NUMBER", "2")),
         batch_size=int(os.environ.get("BATCH_SIZE", "15000")),
+        train_max_rows=int(os.environ.get("TRAIN_MAX_ROWS", "5000")),
         random_seed=int(os.environ.get("RANDOM_SEED", "42")),
         experiment_name=os.environ.get("MLFLOW_EXPERIMENT", "real-estate-regression"),
         registered_model_name=os.environ.get("MLFLOW_MODEL_NAME", "real-estate-regressor"),

@@ -18,10 +18,13 @@ webserverSecretKey: "mlops2026-stable-secret-key-proyecto2"
 # (`ImportError: cannot import name 'parse' from 'packaging.version'`)
 # which crashed the airflow init container.
 # v2.0.4 adds: RF n_estimators 200->100, numerics cast to float64 in train.
+# v2.0.5 adds: pipeline incremental (preprocess solo status='loaded' + marca
+# 'processed'; split solo filas con split IS NULL), hiperparametros reducidos
+# (RF/GB n_estimators=30), y cap TRAIN_MAX_ROWS=5000. Tiempo por corrida plano.
 images:
   airflow:
     repository: camilogarcia06/mlops-airflow
-    tag: latest
+    tag: v2.0.5
     pullPolicy: Always
 
 # Re-use the project's PostgreSQL (DB `airflow` created by phase 1 init.sql).
@@ -56,7 +59,7 @@ env:
   - name: DATA_API_URL
     value: "http://192.168.2.6:8000"
   - name: GROUP_NUMBER
-    value: "1"
+    value: "2"
   - name: BATCH_SIZE
     value: "15000"
 
